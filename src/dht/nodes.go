@@ -296,5 +296,17 @@ func (o *Node) FixFingers() {
 // method CheckPredecessor() checks whether the predecessor is failed
 // called periodically, with goroutine
 func (o *Node) CheckPredecessor() {
-	// TODO: finish CheckPredecessor
+	if o.Predecessor == nil {
+		return
+	}
+	client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
+	if err != nil {
+		o.Predecessor = nil
+	} else {
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return
+		}
+	}
 }
