@@ -1,4 +1,4 @@
-// Node type in chord and some methods of Node type
+// Node type in chord and main methods of Node type
 
 package chord
 
@@ -59,11 +59,42 @@ func (o *Node) FindSuccessor(pos *lookupType, res *Edge) error {
 	if pos.cnt >= FailTimes {
 		return errors.New("Lookup failure: not found ")
 	}
+	if o.Successor[1].Addr == o.Addr || pos.ID.Cmp(o.ID) == 0 {
+		*res = Edge{o.Addr, new(big.Int).Set(o.ID)}
+	} else if between(o.ID, pos.ID, o.Successor[1].ID, true) {
+		*res = Edge{o.Successor[1].Addr, new(big.Int).Set(o.Successor[1].ID)}
+	} else {
+		nextNode := o.closestPrecedingNode(new(big.Int).Set(pos.ID))
+
+		client, err := rpc.DialHTTP("tcp", nextNode.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error: ", err)
+			return err
+		}
+
+		err = client.Call("Node.FindSuccessor", pos, res)
+		if err != nil {
+			fmt.Println("Error: Calling Node.FindSuccessor: ", err)
+			return err
+		}
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return err
+		}
+	}
 	return nil
-	// TODO: finish FindSuccessor
 }
 
-// TODO: need func closest_preceding_node(id)?
+// method closestPrecedingNode() searches the local table for the highest predecessor of id
+func (o *Node) closestPrecedingNode(id *big.Int) *Edge {
+	for i := M; i > 0; i-- {
+		if between(o.ID, o.Finger[i].ID, id, true) {
+			return &Edge{o.Finger[i].Addr, o.Finger[i].ID}
+		}
+	}
+	return &Edge{o.Successor[1].Addr, o.Successor[1].ID}
+}
 
 // method Create() creates a new chord ring
 // Note that the predecessor of the only node is itself
@@ -77,8 +108,7 @@ func (o *Node) Join(addr string) {
 	// client: the node which the current node joins from
 	client, err := rpc.DialHTTP("tcp", addr)
 	if err != nil {
-		fmt.Printf("Error: Dialing error: ")
-		fmt.Println(err)
+		fmt.Println("Error: Dialing error: ", err)
 		return
 	}
 
@@ -86,28 +116,31 @@ func (o *Node) Join(addr string) {
 	err = client.Call("Node.FindSuccessor",
 		&lookupType{new(big.Int).Set(o.ID), 0}, &o.Successor[1])
 	if err != nil {
-		fmt.Printf("Error: Calling Node.FindSuccessor: ")
-		fmt.Println(err)
+		fmt.Println("Error: Calling Node.FindSuccessor: ", err)
+		return
+	}
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
 		return
 	}
 
 	// client: the successor of the current node
 	client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
 	if err != nil {
-		fmt.Printf("Error: Dialing error: ")
-		fmt.Println(err)
+		fmt.Println("Error: Dialing error: ", err)
 		return
 	}
 
-	/* ---- move k-v pair ---- */
+	/* ---- move k-v pairs ---- */
 	var successorData *KVMap
 	var successorPre *Edge
 
 	// get successor's data(KVMap)
 	err = client.Call("Node.GetData", nil, &successorData)
 	if err != nil {
-		fmt.Printf("Error: Calling Node.GetData: ")
-		fmt.Println(err)
+		fmt.Println("Error: Calling Node.GetData: ", err)
 		return
 	}
 
@@ -116,8 +149,7 @@ func (o *Node) Join(addr string) {
 	for successorPre = nil; successorPre == nil && cnt < FailTimes; {
 		err = client.Call("Node.GetPredecessor", nil, &successorPre)
 		if err != nil {
-			fmt.Printf("Error: Calling Node.GetPredecessor: ")
-			fmt.Println(err)
+			fmt.Println("Error: Calling Node.GetPredecessor: ", err)
 			return
 		}
 
@@ -150,12 +182,99 @@ func (o *Node) Join(addr string) {
 
 	// Notify the successor of the current node
 	err = client.Call("Node.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
+	if err != nil {
+		fmt.Println("Error: Node.Notify error: ", err)
+		return
+	}
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return
+	}
+}
+
+// method Quit() let the current node quit the chord ring
+// note that the current node has predecessor and successor
+func (o *Node) Quit() {
+	o.MoveAllDataToSuccessor()
+
+	// set the predecessor's successor
+	client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return
+	}
+	err = client.Call("Node.SetSuccessor", o.Successor[1], nil)
+	if err != nil {
+		fmt.Println("Error: Node.SetSuccessor error: ", err)
+		return
+	}
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return
+	}
+
+	// set the successor's predecessor
+	client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return
+	}
+	err = client.Call("Node.SetPredecessor", *o.Predecessor, nil)
+	if err != nil {
+		fmt.Println("Error: Node.SetPredecessor error: ", err)
+		return
+	}
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return
+	}
 }
 
 // method Stabilize() maintain the current successor of node o
 // called periodically, with goroutine
-func (o *Node) Stabilize() {
-	// TODO: finish Stabilize
+func (o *Node) Stabilize(infinite bool) {
+	client, err := rpc.DialHTTP("tcp", o.Successor[1].Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return
+	}
+
+	var successorPre *Edge
+	err = client.Call("Node.GetPredecessor", nil, &successorPre)
+	if err != nil {
+		fmt.Println("Error: Calling Node.GetPredecessor: ", err)
+		return
+	}
+
+	if between(o.ID, successorPre.ID, o.Successor[1].ID, false) {
+		o.Successor[1] = *successorPre
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return
+		}
+
+		client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error: ", err)
+			return
+		}
+	}
+	err = client.Call("Node.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
+	if err != nil {
+		fmt.Println("Error: Node.Notify error: ", err)
+		return
+	}
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return
+	}
 }
 
 // method Notify() update the predecessor of node p
@@ -178,17 +297,4 @@ func (o *Node) FixFingers() {
 // called periodically, with goroutine
 func (o *Node) CheckPredecessor() {
 	// TODO: finish CheckPredecessor
-}
-
-/* ---- auxiliary methods ----*/
-// method GetData() returns KVMap Data of the current node
-func (o *Node) GetData(args interface{}, res **KVMap) error {
-	*res = &o.Data
-	return nil
-}
-
-// method GetPredecessor() returns an Edge pointing to the predecessor of the current node
-func (o *Node) GetPredecessor(args interface{}, res **Edge) error {
-	*res = o.Predecessor
-	return nil
 }

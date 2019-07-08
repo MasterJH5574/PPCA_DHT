@@ -38,8 +38,7 @@ func Help() {
 func Port(newPort string, port *string) {
 	portInt, err := strconv.Atoi(newPort)
 	if err != nil {
-		fmt.Printf("Error: ")
-		fmt.Println(err)
+		fmt.Println("Error: ", err)
 		message.ShowMoreHelp()
 	} else if portInt < 0 || portInt > 65535 {
 		fmt.Printf("Error: Invalid port\n")
@@ -56,23 +55,21 @@ func Port(newPort string, port *string) {
 func Create(o *chord.Node, port string, createdOrJoined *bool) {
 	err := rpc.Register(*o)
 	if err != nil {
-		fmt.Printf("Error: rpc.Register error: ")
-		fmt.Println(err)
+		fmt.Println("Error: rpc.Register error: ", err)
 		return
 	}
 	rpc.HandleHTTP()
 
 	listen, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		fmt.Printf("Error: Listen error: ")
-		fmt.Println(err)
+		fmt.Println("Error: Listen error: ", err)
 		return
 	}
 	o.Init(port)
 	o.Create()
 
 	go http.Serve(listen, nil)
-	go o.Stabilize()
+	go o.Stabilize(true)
 	go o.FixFingers()
 	go o.CheckPredecessor()
 
@@ -86,23 +83,21 @@ func Create(o *chord.Node, port string, createdOrJoined *bool) {
 func Join(o *chord.Node, port, addr string, createdOrJoined *bool) {
 	err := rpc.Register(*o)
 	if err != nil {
-		fmt.Printf("Error: rpc.Register error: ")
-		fmt.Println(err)
+		fmt.Println("Error: rpc.Register error: ", err)
 		return
 	}
 	rpc.HandleHTTP()
 
 	listen, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		fmt.Printf("Error: Listen error: ")
-		fmt.Println(err)
+		fmt.Println("Error: Listen error: ", err)
 		return
 	}
 	o.Init(port)
 	o.Join(addr)
 
 	go http.Serve(listen, nil)
-	go o.Stabilize()
+	go o.Stabilize(true)
 	go o.FixFingers()
 	go o.CheckPredecessor()
 
@@ -113,8 +108,12 @@ func Join(o *chord.Node, port, addr string, createdOrJoined *bool) {
 }
 
 // function Quit()
-func Quit() {
-	// TODO: complete Quit()
+func Quit(o *chord.Node) {
+	o.Stabilize(false)
+	if o.Successor[1].Addr == o.Addr {
+		return
+	}
+	o.Quit()
 }
 
 func commandLine() {
@@ -170,7 +169,7 @@ func commandLine() {
 			if len(args) != 1 {
 				message.InvalidCommand()
 			} else {
-				Quit()
+				Quit(&o)
 				running = false
 			}
 		}

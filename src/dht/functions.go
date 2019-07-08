@@ -15,9 +15,9 @@ var (
 
 // hash functions
 func hashString(elt string) *big.Int {
-	hasher := sha1.New()
-	hasher.Write([]byte(elt))
-	return new(big.Int).SetBytes(hasher.Sum(nil))
+	hash := sha1.New()
+	hash.Write([]byte(elt))
+	return new(big.Int).SetBytes(hash.Sum(nil))
 }
 
 // used to calculate the destination of finger entries
