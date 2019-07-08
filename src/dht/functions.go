@@ -9,21 +9,21 @@ import (
 )
 
 var (
-	two = big.NewInt(2)
+	two     = big.NewInt(2)
 	hashMod = new(big.Int).Exp(two, big.NewInt(M), nil)
 )
 
 // hash functions
-func hashString(elt string) big.Int {
+func hashString(elt string) *big.Int {
 	hasher := sha1.New()
 	hasher.Write([]byte(elt))
-	return *new(big.Int).SetBytes(hasher.Sum(nil))
+	return new(big.Int).SetBytes(hasher.Sum(nil))
 }
 
 // used to calculate the destination of finger entries
 func jump(addr string, power int) *big.Int {
 	n := hashString(addr)
-	gap := new(big.Int).Exp(two, big.NewInt(int64(power) - 1), nil)
+	gap := new(big.Int).Exp(two, big.NewInt(int64(power)-1), nil)
 	res := new(big.Int).Add(n, gap)
 	return new(big.Int).Mod(res, hashMod)
 }

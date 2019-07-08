@@ -15,10 +15,9 @@ import (
 	"strings"
 )
 
-
 func getLine() []string {
 	reader := bufio.NewReader(os.Stdin)
-	text, err:= reader.ReadString('\n')
+	text, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Println(err)
 		return nil
@@ -28,7 +27,6 @@ func getLine() []string {
 		return args
 	}
 }
-
 
 // function Help() shows information
 func Help() {
@@ -64,7 +62,7 @@ func Create(o *chord.Node, port string, createdOrJoined *bool) {
 	}
 	rpc.HandleHTTP()
 
-	listen, err := net.Listen("tcp", ":" + port)
+	listen, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Printf("Error: Listen error: ")
 		fmt.Println(err)
@@ -94,21 +92,19 @@ func Join(o *chord.Node, port, addr string, createdOrJoined *bool) {
 	}
 	rpc.HandleHTTP()
 
-	listen, err := net.Listen("tcp", ":" + port)
+	listen, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Printf("Error: Listen error: ")
 		fmt.Println(err)
 		return
 	}
 	o.Init(port)
-	o.Join(addr) // TODO: args: node of addr
+	o.Join(addr)
 
 	go http.Serve(listen, nil)
 	go o.Stabilize()
 	go o.FixFingers()
 	go o.CheckPredecessor()
-	// TODO: complete Join()
-	// Q: how to get the node via it's addr?
 
 	*createdOrJoined = true
 
