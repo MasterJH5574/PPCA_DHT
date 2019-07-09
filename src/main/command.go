@@ -52,7 +52,7 @@ func Port(newPort string, port *string) {
 }
 
 // function Create() creates a new chord ring based on the current node
-func Create(o *chord.Node, port string, createdOrJoined *bool) {
+func Create(o *chord.RPCNode, port string, createdOrJoined *bool) {
 	err := rpc.Register(*o)
 	if err != nil {
 		fmt.Println("Error: rpc.Register error: ", err)
@@ -65,13 +65,13 @@ func Create(o *chord.Node, port string, createdOrJoined *bool) {
 		fmt.Println("Error: Listen error: ", err)
 		return
 	}
-	o.Init(port)
-	o.Create()
+	o.O.Init(port)
+	o.O.Create()
 
 	go http.Serve(listen, nil)
-	go o.Stabilize(true)
-	go o.FixFingers()
-	go o.CheckPredecessor()
+	go o.O.Stabilize(true)
+	go o.O.FixFingers()
+	go o.O.CheckPredecessor()
 
 	*createdOrJoined = true
 
@@ -80,7 +80,7 @@ func Create(o *chord.Node, port string, createdOrJoined *bool) {
 }
 
 // function Join() let the current node join a chord ring
-func Join(o *chord.Node, port, addr string, createdOrJoined *bool) {
+func Join(o *chord.RPCNode, port, addr string, createdOrJoined *bool) {
 	err := rpc.Register(*o)
 	if err != nil {
 		fmt.Println("Error: rpc.Register error: ", err)
@@ -93,13 +93,13 @@ func Join(o *chord.Node, port, addr string, createdOrJoined *bool) {
 		fmt.Println("Error: Listen error: ", err)
 		return
 	}
-	o.Init(port)
-	o.Join(addr)
+	o.O.Init(port)
+	o.O.Join(addr)
 
 	go http.Serve(listen, nil)
-	go o.Stabilize(true)
-	go o.FixFingers()
-	go o.CheckPredecessor()
+	go o.O.Stabilize(true)
+	go o.O.FixFingers()
+	go o.O.CheckPredecessor()
 
 	*createdOrJoined = true
 
@@ -108,17 +108,19 @@ func Join(o *chord.Node, port, addr string, createdOrJoined *bool) {
 }
 
 // function Quit()
-func Quit(o *chord.Node) {
-	o.Stabilize(false)
-	if o.Successor[1].Addr == o.Addr {
+func Quit(o *chord.RPCNode) {
+	o.O.Stabilize(false)
+	if o.O.Successor[1].Addr == o.O.Addr {
 		return
 	}
-	o.Quit()
+	o.O.Quit()
 }
 
 func commandLine() {
 	// create a new node for current server
-	var o chord.Node
+	var o chord.RPCNode
+	o.O = new(chord.Node)
+
 	port := "7722" // abbr of PPCA
 	createdOrJoined := false
 

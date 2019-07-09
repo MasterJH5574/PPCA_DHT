@@ -4,6 +4,7 @@ package chord
 
 import (
 	"fmt"
+	"math/big"
 	"net/rpc"
 )
 
@@ -28,7 +29,7 @@ func (o *Node) MoveAllDataToSuccessor() {
 	}
 
 	var successorData *KVMap
-	err = client.Call("Node.GetData", nil, &successorData)
+	err = client.Call("RPCNode.GetData", nil, &successorData)
 	if err != nil {
 		fmt.Println("Error: Calling Node.GetData: ", err)
 		return
@@ -50,11 +51,55 @@ func (o *Node) MoveAllDataToSuccessor() {
 }
 
 // method SetSuccessor()
-func (o *Node) SetSuccessor(edge Edge) {
+func (o *Node) SetSuccessor(edge Edge, res interface{}) error {
 	o.Successor[1] = edge
+	return nil
 }
 
 // method SetPredecessor()
-func (o *Node) SetPredecessor(edge Edge) {
+func (o *Node) SetPredecessor(edge Edge, res interface{}) error {
 	o.Predecessor = &edge
+	return nil
+}
+
+// method simpleStabilize() stabilize once
+func (o *Node) simpleStabilize() {
+	client, err := rpc.DialHTTP("tcp", o.Successor[1].Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return
+	}
+
+	var successorPre *Edge
+	err = client.Call("RPCNode.GetPredecessor", nil, &successorPre)
+	if err != nil {
+		fmt.Println("Error: Calling Node.GetPredecessor: ", err)
+		return
+	}
+
+	if between(o.ID, successorPre.ID, o.Successor[1].ID, false) {
+		o.Successor[1] = *successorPre
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return
+		}
+
+		client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error: ", err)
+			return
+		}
+	}
+	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
+	if err != nil {
+		fmt.Println("Error: Node.Notify error: ", err)
+		return
+	}
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return
+	}
 }

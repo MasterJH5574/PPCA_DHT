@@ -38,6 +38,8 @@ type Node struct {
 	Finger      [successorListLen]Edge
 
 	Data KVMap // map with mutex lock
+
+	FingerIndex int
 }
 
 // define lookup type
@@ -72,7 +74,7 @@ func (o *Node) FindSuccessor(pos *lookupType, res *Edge) error {
 			return err
 		}
 
-		err = client.Call("Node.FindSuccessor", pos, res)
+		err = client.Call("RPCNode.FindSuccessor", pos, res)
 		if err != nil {
 			fmt.Println("Error: Calling Node.FindSuccessor: ", err)
 			return err
@@ -113,7 +115,7 @@ func (o *Node) Join(addr string) {
 	}
 
 	o.Predecessor = nil
-	err = client.Call("Node.FindSuccessor",
+	err = client.Call("RPCNode.FindSuccessor",
 		&lookupType{new(big.Int).Set(o.ID), 0}, &o.Successor[1])
 	if err != nil {
 		fmt.Println("Error: Calling Node.FindSuccessor: ", err)
@@ -138,7 +140,7 @@ func (o *Node) Join(addr string) {
 	var successorPre *Edge
 
 	// get successor's data(KVMap)
-	err = client.Call("Node.GetData", nil, &successorData)
+	err = client.Call("RPCNode.GetData", nil, &successorData)
 	if err != nil {
 		fmt.Println("Error: Calling Node.GetData: ", err)
 		return
@@ -147,7 +149,7 @@ func (o *Node) Join(addr string) {
 	// get the successor's predecessor
 	cnt := 0
 	for successorPre = nil; successorPre == nil && cnt < FailTimes; {
-		err = client.Call("Node.GetPredecessor", nil, &successorPre)
+		err = client.Call("RPCNode.GetPredecessor", nil, &successorPre)
 		if err != nil {
 			fmt.Println("Error: Calling Node.GetPredecessor: ", err)
 			return
@@ -181,7 +183,7 @@ func (o *Node) Join(addr string) {
 	/* ---- finish move k-v pair */
 
 	// Notify the successor of the current node
-	err = client.Call("Node.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
+	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
 	if err != nil {
 		fmt.Println("Error: Node.Notify error: ", err)
 		return
@@ -205,7 +207,7 @@ func (o *Node) Quit() {
 		fmt.Println("Error: Dialing error: ", err)
 		return
 	}
-	err = client.Call("Node.SetSuccessor", o.Successor[1], nil)
+	err = client.Call("RPCNode.SetSuccessor", o.Successor[1], nil)
 	if err != nil {
 		fmt.Println("Error: Node.SetSuccessor error: ", err)
 		return
@@ -222,7 +224,7 @@ func (o *Node) Quit() {
 		fmt.Println("Error: Dialing error: ", err)
 		return
 	}
-	err = client.Call("Node.SetPredecessor", *o.Predecessor, nil)
+	err = client.Call("RPCNode.SetPredecessor", *o.Predecessor, nil)
 	if err != nil {
 		fmt.Println("Error: Node.SetPredecessor error: ", err)
 		return
@@ -237,43 +239,13 @@ func (o *Node) Quit() {
 // method Stabilize() maintain the current successor of node o
 // called periodically, with goroutine
 func (o *Node) Stabilize(infinite bool) {
-	client, err := rpc.DialHTTP("tcp", o.Successor[1].Addr)
-	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
-		return
-	}
-
-	var successorPre *Edge
-	err = client.Call("Node.GetPredecessor", nil, &successorPre)
-	if err != nil {
-		fmt.Println("Error: Calling Node.GetPredecessor: ", err)
-		return
-	}
-
-	if between(o.ID, successorPre.ID, o.Successor[1].ID, false) {
-		o.Successor[1] = *successorPre
-		err = client.Close()
-		if err != nil {
-			fmt.Println("Error: Close client error: ", err)
-			return
+	if infinite == false {
+		o.simpleStabilize()
+	} else {
+		for {
+			o.simpleStabilize()
+			time.Sleep(timeGap)
 		}
-
-		client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
-		if err != nil {
-			fmt.Println("Error: Dialing error: ", err)
-			return
-		}
-	}
-	err = client.Call("Node.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
-	if err != nil {
-		fmt.Println("Error: Node.Notify error: ", err)
-		return
-	}
-
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return
 	}
 }
 
@@ -290,23 +262,64 @@ func (o *Node) Notify(pred *Edge, res interface{}) error {
 // method FixFingers() maintains the FingerTable of node o
 // called periodically, with goroutine
 func (o *Node) FixFingers() {
-	// TODO: finish FixFingers
+	o.FingerIndex = 1
+	for {
+		err := o.FindSuccessor(&lookupType{jump(o.Addr, o.FingerIndex), 0}, &o.Finger[o.FingerIndex])
+		if err != nil {
+			fmt.Println("Error: FixFingers Error: ", err)
+			return
+		}
+
+		edge := o.Finger[o.FingerIndex]
+
+		o.FingerIndex++
+		if o.FingerIndex > M {
+			o.FingerIndex = 1
+		}
+
+		for {
+			if between(o.ID, jump(o.Addr, o.FingerIndex), edge.ID, true) {
+				o.Finger[o.FingerIndex] = edge
+				o.FingerIndex++
+				if o.FingerIndex > M {
+					o.FingerIndex = 1
+					break
+				}
+			} else {
+				break
+			}
+		}
+
+		time.Sleep(timeGap)
+	}
 }
 
 // method CheckPredecessor() checks whether the predecessor is failed
 // called periodically, with goroutine
 func (o *Node) CheckPredecessor() {
-	if o.Predecessor == nil {
-		return
-	}
-	client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
-	if err != nil {
-		o.Predecessor = nil
-	} else {
-		err = client.Close()
-		if err != nil {
-			fmt.Println("Error: Close client error: ", err)
+	for {
+		if o.Predecessor == nil {
 			return
 		}
+		client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
+		if err != nil {
+			o.Predecessor = nil
+		} else {
+			err = client.Close()
+			if err != nil {
+				fmt.Println("Error: Close client error: ", err)
+				return
+			}
+		}
+		time.Sleep(timeGap)
 	}
 }
+
+/* method used for rpc call:
+FindSuccessor
+Notify
+GetData
+GetPredecessor
+SetSuccessor
+SetPredecessor
+*/
