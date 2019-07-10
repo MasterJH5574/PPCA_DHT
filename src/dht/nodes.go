@@ -14,7 +14,7 @@ import (
 const (
 	M                = 160
 	successorListLen = 20
-	timeGap          = 1000 * time.Millisecond
+	Second           = 1000 * time.Millisecond
 	FailTimes        = 32
 )
 
@@ -50,7 +50,7 @@ type lookupType struct {
 
 // method init() initialize the node
 func (o *Node) Init(port string) {
-	o.Addr = getLocalAddress() + ":" + port
+	o.Addr = GetLocalAddress() + ":" + port
 	o.ID = hashString(o.Addr)
 	o.Data.Map = make(map[string]string)
 }
@@ -106,12 +106,12 @@ func (o *Node) Create() {
 }
 
 // method Join() make a node p join the chord ring
-func (o *Node) Join(addr string) {
+func (o *Node) Join(addr string) bool {
 	// client: the node which the current node joins from
 	client, err := rpc.DialHTTP("tcp", addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error: ", err)
-		return
+		return false
 	}
 
 	o.Predecessor = nil
@@ -119,20 +119,20 @@ func (o *Node) Join(addr string) {
 		&lookupType{new(big.Int).Set(o.ID), 0}, &o.Successor[1])
 	if err != nil {
 		fmt.Println("Error: Calling Node.FindSuccessor: ", err)
-		return
+		return false
 	}
 
 	err = client.Close()
 	if err != nil {
 		fmt.Println("Error: Close client error: ", err)
-		return
+		return false
 	}
 
 	// client: the successor of the current node
 	client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error: ", err)
-		return
+		return false
 	}
 
 	/* ---- move k-v pairs ---- */
@@ -143,7 +143,7 @@ func (o *Node) Join(addr string) {
 	err = client.Call("RPCNode.GetData", nil, &successorData)
 	if err != nil {
 		fmt.Println("Error: Calling Node.GetData: ", err)
-		return
+		return false
 	}
 
 	// get the successor's predecessor
@@ -152,11 +152,11 @@ func (o *Node) Join(addr string) {
 		err = client.Call("RPCNode.GetPredecessor", nil, &successorPre)
 		if err != nil {
 			fmt.Println("Error: Calling Node.GetPredecessor: ", err)
-			return
+			return false
 		}
 
 		if successorPre == nil {
-			time.Sleep(timeGap)
+			time.Sleep(Second)
 			cnt++
 		} else {
 			break
@@ -164,7 +164,7 @@ func (o *Node) Join(addr string) {
 	}
 	if cnt == FailTimes {
 		fmt.Printf("Error: Predecessor not found when Join\n")
-		return
+		return false
 	}
 
 	successorData.lock.Lock()
@@ -186,14 +186,16 @@ func (o *Node) Join(addr string) {
 	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
 	if err != nil {
 		fmt.Println("Error: Node.Notify error: ", err)
-		return
+		return false
 	}
 
 	err = client.Close()
 	if err != nil {
 		fmt.Println("Error: Close client error: ", err)
-		return
+		return false
 	}
+
+	return true
 }
 
 // method Quit() let the current node quit the chord ring
@@ -244,7 +246,7 @@ func (o *Node) Stabilize(infinite bool) {
 	} else {
 		for {
 			o.simpleStabilize()
-			time.Sleep(timeGap)
+			time.Sleep(Second)
 		}
 	}
 }
@@ -275,6 +277,7 @@ func (o *Node) FixFingers() {
 		o.FingerIndex++
 		if o.FingerIndex > M {
 			o.FingerIndex = 1
+			return
 		}
 
 		for {
@@ -290,7 +293,7 @@ func (o *Node) FixFingers() {
 			}
 		}
 
-		time.Sleep(timeGap)
+		time.Sleep(Second)
 	}
 }
 
@@ -301,25 +304,121 @@ func (o *Node) CheckPredecessor() {
 		if o.Predecessor == nil {
 			return
 		}
-		client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
-		if err != nil {
+		if !o.Ping(o.Predecessor.Addr) {
 			o.Predecessor = nil
-		} else {
-			err = client.Close()
-			if err != nil {
-				fmt.Println("Error: Close client error: ", err)
-				return
-			}
 		}
-		time.Sleep(timeGap)
+		time.Sleep(Second)
 	}
 }
 
-/* method used for rpc call:
-FindSuccessor
-Notify
-GetData
-GetPredecessor
-SetSuccessor
-SetPredecessor
-*/
+// put a key into the chord ring
+func (o *Node) Put(key, value string) bool {
+	keyID := hashString(key)
+
+	var res Edge
+	err := o.FindSuccessor(&lookupType{new(big.Int).Set(keyID), 0}, &res)
+	if err != nil {
+		fmt.Println("Error: Put error: ", err)
+		return false
+	}
+
+	client, err := rpc.DialHTTP("tcp", res.Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return false
+	}
+
+	var Data *KVMap
+	err = client.Call("RPCNode.GetData", nil, &Data)
+	if err != nil {
+		fmt.Println("Error: Calling Node.GetData: ", err)
+		return false
+	}
+
+	Data.lock.Lock()
+	Data.Map[key] = value // Do I need to return false?
+	Data.lock.Unlock()
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return false
+	}
+	return true
+}
+
+// get a key
+func (o *Node) Get(key string) (string, bool) {
+	keyID := hashString(key)
+
+	var res Edge
+	err := o.FindSuccessor(&lookupType{new(big.Int).Set(keyID), 0}, &res)
+	if err != nil {
+		fmt.Println("Error: Put error: ", err)
+		return *new(string), false
+	}
+
+	client, err := rpc.DialHTTP("tcp", res.Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return *new(string), false
+	}
+
+	var value *string
+	err = client.Call("RPCNode.GetValue", nil, &value)
+	if err != nil {
+		fmt.Println("Error: Calling Node.GetData: ", err)
+		return *new(string), false
+	}
+	if value == nil {
+		return *new(string), false
+	}
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return *new(string), false
+	}
+
+	return *value, true
+}
+
+// delete a key
+func (o *Node) Delete(key string) bool {
+	keyID := hashString(key)
+
+	var res Edge
+	err := o.FindSuccessor(&lookupType{new(big.Int).Set(keyID), 0}, &res)
+	if err != nil {
+		fmt.Println("Error: Put error: ", err)
+		return false
+	}
+
+	client, err := rpc.DialHTTP("tcp", res.Addr)
+	if err != nil {
+		fmt.Println("Error: Dialing error: ", err)
+		return false
+	}
+
+	var Data *KVMap
+	err = client.Call("RPCNode.GetData", nil, &Data)
+	if err != nil {
+		fmt.Println("Error: Calling Node.GetData: ", err)
+		return false
+	}
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return false
+	}
+
+	Data.lock.Lock()
+	_, ok := Data.Map[key]
+	if ok == true {
+		delete(Data.Map, key)
+		Data.lock.Unlock()
+		return true
+	}
+	Data.lock.Unlock()
+	return false
+}

@@ -40,7 +40,7 @@ func between(start, elt, end *big.Int, inclusive bool) bool {
 }
 
 // function to get local address(ip address)
-func getLocalAddress() string {
+func GetLocalAddress() string {
 	var localaddress string
 
 	ifaces, err := net.Interfaces()

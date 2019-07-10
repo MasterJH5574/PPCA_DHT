@@ -2,17 +2,21 @@
 
 package chord
 
+import "net"
+
 type RPCNode struct {
-	O *Node
+	O      *Node
+	Listen net.Listener
 }
 
 /* method used for rpc call:
-   FindSuccessor
-   Notify
-   GetData
-   GetPredecessor
-   SetSuccessor
-   SetPredecessor
+    FindSuccessor
+    Notify
+    GetData
+	GetValue
+    GetPredecessor
+    SetSuccessor
+    SetPredecessor
 */
 
 func (o *RPCNode) FindSuccessor(pos *lookupType, res *Edge) error {
@@ -25,6 +29,10 @@ func (o *RPCNode) Notify(pred *Edge, res interface{}) error {
 
 func (o *RPCNode) GetData(args interface{}, res **KVMap) error {
 	return o.O.GetData(args, res)
+}
+
+func (o *RPCNode) GetValue(key string, value **string) error {
+	return o.O.GetValue(key, value)
 }
 
 func (o *RPCNode) GetPredecessor(args interface{}, res **Edge) error {

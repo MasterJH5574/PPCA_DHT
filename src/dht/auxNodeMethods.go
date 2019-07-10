@@ -8,9 +8,36 @@ import (
 	"net/rpc"
 )
 
+// method Ping() ping the given address
+func (o *Node) Ping(addr string) bool {
+	client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
+	if err != nil {
+		return false
+	}
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+	}
+	return true
+}
+
 // method GetData() returns KVMap Data of the current node
 func (o *Node) GetData(args interface{}, res **KVMap) error {
 	*res = &o.Data
+	return nil
+}
+
+// method GetValue() returns value of a key
+func (o *Node) GetValue(key string, value **string) error {
+	o.Data.lock.Lock()
+	str, ok := o.Data.Map[key]
+	o.Data.lock.Unlock()
+	if ok == false {
+		*value = nil
+	} else {
+		*value = new(string)
+		**value = str
+	}
 	return nil
 }
 
