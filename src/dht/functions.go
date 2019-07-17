@@ -4,7 +4,6 @@ package chord
 
 import (
 	"crypto/sha1"
-	"fmt"
 	"math/big"
 	"net"
 	"net/rpc"
@@ -76,18 +75,44 @@ func GetLocalAddress() string {
 	return localaddress
 }
 
-// function Dial to dial a given address
+// function Dial() to dial a given address
 func Dial(addr string) (*rpc.Client, error) {
-	var res error
-	for i := 0; i < 10; i++ {
-		client, err := rpc.Dial("tcp", addr)
+	var err error
+	var client *rpc.Client
+	for i := 0; i < 3; i++ {
+		client, err = rpc.Dial("tcp", addr)
 		if err == nil {
 			return client, err
 		} else {
-			fmt.Println("Dial waiting...")
+			time.Sleep(Second / 2)
 		}
-		res = err
-		time.Sleep(Second)
 	}
-	return nil, res
+	return nil, err
+}
+
+// function Ping()
+func Ping(addr string) bool {
+	for i := 0; i < 3; i++ {
+		chOK := make(chan bool)
+		go func() {
+			client, err := rpc.Dial("tcp", addr)
+			if err == nil {
+				err = client.Close()
+				chOK <- true
+			} else {
+				chOK <- false
+			}
+		}()
+		select {
+		case ok := <-chOK:
+			if ok {
+				return true
+			} else {
+				continue
+			}
+		case <-time.After(Second / 2):
+			break
+		}
+	}
+	return false
 }

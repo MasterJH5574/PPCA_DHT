@@ -7,21 +7,12 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"net/rpc"
 	"time"
 )
 
 // method Ping() ping the given address
 func (o *Node) Ping(addr string) bool {
-	client, err := rpc.Dial("tcp", addr)
-	if err != nil {
-		return false
-	}
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-	}
-	return true
+	return Ping(addr)
 }
 
 // method PutValue() puts a Value into the map
@@ -80,6 +71,10 @@ func (o *Node) GetSuccessorList(args int, res *[successorListLen + 1]Edge) error
 
 // method MoveAllDataToSuccessor(successor) moves the data of the current node to its successor
 func (o *Node) MoveAllDataToSuccessor() {
+	if Ping(o.Successor[1].Addr) == false {
+		fmt.Println("Error: Not connected[1]")
+		return
+	}
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error[1]: ", err)
@@ -140,6 +135,11 @@ func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
 func (o *Node) SetSuccessor(edge Edge, res *int) error {
 	o.Successor[1] = edge
 	var list [successorListLen + 1]Edge
+
+	if Ping(o.Successor[1].Addr) == false {
+		fmt.Println("Error: Not connected[1]")
+		return errors.New("Not connected[1] ")
+	}
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error[4]: ", err)
@@ -174,7 +174,12 @@ func (o *Node) SetPredecessor(edge Edge, res *int) error {
 // method simpleStabilize() stabilize once
 func (o *Node) simpleStabilize() {
 	o.FixSuccessors()
-	client, err := rpc.Dial("tcp", o.Successor[1].Addr)
+
+	if Ping(o.Successor[1].Addr) == false {
+		//fmt.Println("Error: Not connected[2]")
+		return
+	}
+	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
 		//fmt.Println("Error: Dialing error[2]: ", err)
 		return
@@ -198,6 +203,10 @@ func (o *Node) simpleStabilize() {
 			return
 		}
 
+		if Ping(o.Successor[1].Addr) == false {
+			fmt.Println("Error: Not connected[3]")
+			return
+		}
 		client, err = Dial(o.Successor[1].Addr)
 		o.sLock.Unlock()
 		if err != nil {
@@ -254,6 +263,10 @@ func (o *Node) FixSuccessors() {
 
 	o.Successor[1] = o.Successor[p]
 	var list [successorListLen + 1]Edge
+	if Ping(o.Successor[1].Addr) == false {
+		fmt.Println("Error: Not connected[4]")
+		return
+	}
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
 		o.sLock.Unlock()

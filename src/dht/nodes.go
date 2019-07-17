@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"net/rpc"
 	"sync"
 	"time"
 )
@@ -83,11 +82,14 @@ func (o *Node) FindSuccessor(pos *LookupType, res *Edge) error {
 			return o.FindSuccessor(pos, res)
 		}
 
-		client, err := rpc.Dial("tcp", nextNode.Addr)
+		if Ping(nextNode.Addr) == false {
+			fmt.Println("Error: Not connected(1)")
+			return errors.New("Not connected(1) ")
+		}
+		client, err := Dial(nextNode.Addr)
 		if err != nil {
-			fmt.Println("waiting...", nextNode.Addr)
-			time.Sleep(Second / 2)
-			return o.FindSuccessor(pos, res)
+			fmt.Println("Error: Dialing error(1): ", err)
+			return err
 		}
 
 		err = client.Call("RPCNode.FindSuccessor", pos, res)
@@ -134,6 +136,10 @@ func (o *Node) Create() {
 // method Join() make a node p join the chord ring
 func (o *Node) Join(addr string) bool {
 	// client: the node which the current node joins from
+	if Ping(addr) == false {
+		fmt.Println("Error: Not connected(2)")
+		return false
+	}
 	client, err := Dial(addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(2): ", err)
@@ -155,6 +161,10 @@ func (o *Node) Join(addr string) bool {
 	}
 
 	// client: the successor of the current node
+	if Ping(o.Successor[1].Addr) == false {
+		fmt.Println("Error: Not connected(3)")
+		return false
+	}
 	client, err = Dial(o.Successor[1].Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(3): ", err)
@@ -212,6 +222,10 @@ func (o *Node) Quit() {
 	o.MoveAllDataToSuccessor()
 
 	// set the predecessor's successor
+	if Ping(o.Predecessor.Addr) == false {
+		fmt.Println("Error: Not connected(4)")
+		return
+	}
 	client, err := Dial(o.Predecessor.Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(4): ", err)
@@ -230,6 +244,10 @@ func (o *Node) Quit() {
 	}
 
 	// set the successor's predecessor
+	if Ping(o.Successor[1].Addr) == false {
+		fmt.Println("Error: Not connected(5)")
+		return
+	}
 	client, err = Dial(o.Successor[1].Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(5): ", err)
@@ -262,7 +280,6 @@ func (o *Node) Stabilize(infinite bool) {
 			time.Sleep(Second / 4)
 		}
 	}
-	fmt.Println("Error: stabilize quit", o.Addr)
 }
 
 // method Notify() update the predecessor of node p
@@ -348,6 +365,10 @@ func (o *Node) Put(key, value string) bool {
 		return false
 	}
 
+	if Ping(res.Addr) == false {
+		fmt.Println("Error: Not connected(6)")
+		return false
+	}
 	client, err := Dial(res.Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(6): ", err)
@@ -382,6 +403,10 @@ func (o *Node) Get(key string) (string, bool) {
 		return *new(string), false
 	}
 
+	if Ping(res.Addr) == false {
+		fmt.Println("Error: Not connected(7)")
+		return *new(string), false
+	}
 	client, err := Dial(res.Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(7): ", err)
@@ -422,6 +447,10 @@ func (o *Node) Delete(key string) bool {
 		return false
 	}
 
+	if Ping(res.Addr) == false {
+		fmt.Println("Error: Not connected(8)")
+		return false
+	}
 	client, err := Dial(res.Addr)
 	if err != nil {
 		fmt.Println("Error: Dialing error(8): ", err)
