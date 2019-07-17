@@ -109,7 +109,7 @@ func test() {
 			(*node[id-i]).Quit()
 			time.Sleep(2 * second)
 		}
-		id -= 5
+		id -= 10
 
 		fmt.Println("Sleep 5 seconds")
 		time.Sleep(5 * second)
