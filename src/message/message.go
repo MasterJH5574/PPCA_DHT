@@ -25,5 +25,6 @@ func HasJoined() {
 
 func PrintTime() {
 	t := strings.Fields(time.Now().String())
-	fmt.Printf("%s %s ", t[0], t[1])
+
+	fmt.Printf("%s %s ", t[0], t[1][:8])
 }

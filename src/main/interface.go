@@ -3,6 +3,7 @@ package main
 import (
 	"dht"
 	"fmt"
+	"message"
 	"net"
 	"net/rpc"
 	"sync"
@@ -17,6 +18,9 @@ type dhtNode interface {
 	Join(addr string) bool
 	Quit()
 	Ping(addr string) bool
+
+	GetAddr() string
+	Dump()
 }
 
 type client struct {
@@ -45,12 +49,12 @@ func (o *client) Run(wg *sync.WaitGroup) {
 	wg.Add(1)
 	o.wg = wg
 
-	err := rpc.Register(*o.O)
+	/*err := o.server.Register(o.O)
 	if err != nil {
 		fmt.Println("Error: rpc.Register error: ", err)
 		return
-	}
-	rpc.HandleHTTP()
+	}*/
+	//o.server.HandleHTTP()
 
 	listen, err := net.Listen("tcp", ":"+o.Port)
 	if err != nil {
@@ -58,24 +62,58 @@ func (o *client) Run(wg *sync.WaitGroup) {
 		return
 	}
 	o.O.Listen = listen
+	o.O.O.ON = true
 	o.O.O.Init(o.Port)
-
 	go o.server.Accept(o.O.Listen)
 }
 
 func (o *client) Create() {
 	o.O.O.Create()
+	go o.O.O.Stabilize(true)
+	go o.O.O.FixFingers()
+	go o.O.O.CheckPredecessor()
+
+	message.PrintTime()
+	fmt.Println("create: success", o.O.O.Addr)
 }
 
 func (o *client) Join(addr string) bool {
-	return o.O.O.Join(addr)
+	res := o.O.O.Join(addr)
+
+	message.PrintTime()
+	if res == true {
+		go o.O.O.Stabilize(true)
+		go o.O.O.FixFingers()
+		go o.O.O.CheckPredecessor()
+		fmt.Println("join:", o.O.O.Addr, "join a ring containing", addr)
+	} else {
+		fmt.Println("join: join failure", addr)
+	}
+
+	return res
 }
 
 func (o *client) Quit() {
+	err := o.O.Listen.Close()
 	o.O.O.Quit()
+	if err != nil {
+		fmt.Println("Error: listen close error: ", err)
+	}
 	o.wg.Add(-1)
 }
 
 func (o *client) Ping(addr string) bool {
 	return o.O.O.Ping(addr)
+}
+
+func (o *client) GetAddr() string {
+	return o.O.O.Addr
+}
+
+func (o *client) Dump() {
+	o.O.O.Dump()
+}
+
+func (o *client) HaHa() {
+
 }

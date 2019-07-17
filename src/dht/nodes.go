@@ -5,6 +5,7 @@ package chord
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/rpc"
 	"sync"
@@ -13,7 +14,7 @@ import (
 
 const (
 	M                = 160
-	successorListLen = 20
+	successorListLen = M
 	Second           = 1000 * time.Millisecond
 	FailTimes        = 32
 )
@@ -29,21 +30,28 @@ type KVMap struct {
 	lock sync.Mutex
 }
 
+type KVPair struct {
+	Key, Value string
+}
+
 type Node struct {
 	Addr string
 	ID   *big.Int
 
-	Successor   [M + 1]Edge
+	Successor [successorListLen + 1]Edge
+	sLock     sync.Mutex
+
 	Predecessor *Edge
-	Finger      [successorListLen]Edge
+	Finger      [M + 1]Edge
 
 	Data KVMap // map with mutex lock
 
 	FingerIndex int
+	ON          bool
 }
 
 // define lookup type
-type lookupType struct {
+type LookupType struct {
 	ID  *big.Int
 	cnt int
 }
@@ -57,26 +65,35 @@ func (o *Node) Init(port string) {
 
 // method FindSuccessor returns an edge pointing to the successor of ID in pos
 // this method may be called by other goroutine
-func (o *Node) FindSuccessor(pos *lookupType, res *Edge) error {
+func (o *Node) FindSuccessor(pos *LookupType, res *Edge) error {
+	pos.cnt++
 	if pos.cnt >= FailTimes {
 		return errors.New("Lookup failure: not found ")
 	}
+	o.FixSuccessors()
 	if o.Successor[1].Addr == o.Addr || pos.ID.Cmp(o.ID) == 0 {
 		*res = Edge{o.Addr, new(big.Int).Set(o.ID)}
 	} else if between(o.ID, pos.ID, o.Successor[1].ID, true) {
 		*res = Edge{o.Successor[1].Addr, new(big.Int).Set(o.Successor[1].ID)}
 	} else {
-		nextNode := o.closestPrecedingNode(new(big.Int).Set(pos.ID))
+		nextNode := o.closestPrecedingNode(pos.ID)
+		if nextNode.ID == nil {
+			fmt.Println("nextNode not found, waiting...")
+			time.Sleep(Second / 2)
+			return o.FindSuccessor(pos, res)
+		}
 
-		client, err := rpc.DialHTTP("tcp", nextNode.Addr)
+		client, err := rpc.Dial("tcp", nextNode.Addr)
 		if err != nil {
-			fmt.Println("Error: Dialing error: ", err)
-			return err
+			fmt.Println("waiting...", nextNode.Addr)
+			time.Sleep(Second / 2)
+			return o.FindSuccessor(pos, res)
 		}
 
 		err = client.Call("RPCNode.FindSuccessor", pos, res)
 		if err != nil {
-			fmt.Println("Error: Calling Node.FindSuccessor: ", err)
+			_ = client.Close()
+			fmt.Println("Error: Find successor Calling Node.FindSuccessor:", err)
 			return err
 		}
 		err = client.Close()
@@ -89,39 +106,48 @@ func (o *Node) FindSuccessor(pos *lookupType, res *Edge) error {
 }
 
 // method closestPrecedingNode() searches the local table for the highest predecessor of id
-func (o *Node) closestPrecedingNode(id *big.Int) *Edge {
+func (o *Node) closestPrecedingNode(id *big.Int) Edge {
 	for i := M; i > 0; i-- {
-		if between(o.ID, o.Finger[i].ID, id, true) {
-			return &Edge{o.Finger[i].Addr, o.Finger[i].ID}
+		if o.Finger[i].ID != nil && o.Ping(o.Finger[i].Addr) {
+			if between(o.ID, o.Finger[i].ID, id, true) {
+				return Edge{o.Finger[i].Addr, new(big.Int).Set(o.Finger[i].ID)}
+			}
 		}
 	}
-	return &Edge{o.Successor[1].Addr, o.Successor[1].ID}
+	o.FixSuccessors()
+	if o.Ping(o.Successor[1].Addr) {
+		return Edge{o.Successor[1].Addr, new(big.Int).Set(o.Successor[1].ID)}
+	} else {
+		return Edge{"", new(big.Int)}
+	}
 }
 
 // method Create() creates a new chord ring
 // Note that the predecessor of the only node is itself
 func (o *Node) Create() {
 	o.Predecessor = &Edge{o.Addr, new(big.Int).Set(o.ID)}
-	o.Successor[1] = Edge{o.Addr, new(big.Int).Set(o.ID)}
+	for i := 1; i <= successorListLen; i++ {
+		o.Successor[i] = Edge{o.Addr, new(big.Int).Set(o.ID)}
+	}
 }
 
 // method Join() make a node p join the chord ring
 func (o *Node) Join(addr string) bool {
 	// client: the node which the current node joins from
-	client, err := rpc.DialHTTP("tcp", addr)
+	client, err := Dial(addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(2): ", err)
 		return false
 	}
 
 	o.Predecessor = nil
 	err = client.Call("RPCNode.FindSuccessor",
-		&lookupType{new(big.Int).Set(o.ID), 0}, &o.Successor[1])
+		&LookupType{new(big.Int).Set(o.ID), 0}, &o.Successor[1])
 	if err != nil {
-		fmt.Println("Error: Calling Node.FindSuccessor: ", err)
+		_ = client.Close()
+		log.Fatalln("Error: Calling Node.FindSuccessor: ", err)
 		return false
 	}
-
 	err = client.Close()
 	if err != nil {
 		fmt.Println("Error: Close client error: ", err)
@@ -129,62 +155,39 @@ func (o *Node) Join(addr string) bool {
 	}
 
 	// client: the successor of the current node
-	client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
+	client, err = Dial(o.Successor[1].Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(3): ", err)
 		return false
 	}
+
+	var list [successorListLen + 1]Edge
+	err = client.Call("RPCNode.GetSuccessorList", 0, &list)
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Call GetSuccessorList Error", err)
+		return false
+	}
+	o.sLock.Lock()
+	for i := 2; i <= successorListLen; i++ {
+		o.Successor[i] = list[i-1]
+	}
+	o.sLock.Unlock()
 
 	/* ---- move k-v pairs ---- */
-	var successorData *KVMap
-	var successorPre *Edge
-
-	// get successor's data(KVMap)
-	err = client.Call("RPCNode.GetData", nil, &successorData)
-	if err != nil {
-		fmt.Println("Error: Calling Node.GetData: ", err)
-		return false
-	}
-
-	// get the successor's predecessor
-	cnt := 0
-	for successorPre = nil; successorPre == nil && cnt < FailTimes; {
-		err = client.Call("RPCNode.GetPredecessor", nil, &successorPre)
-		if err != nil {
-			fmt.Println("Error: Calling Node.GetPredecessor: ", err)
-			return false
-		}
-
-		if successorPre == nil {
-			time.Sleep(Second)
-			cnt++
-		} else {
-			break
-		}
-	}
-	if cnt == FailTimes {
-		fmt.Printf("Error: Predecessor not found when Join\n")
-		return false
-	}
-
-	successorData.lock.Lock()
 	o.Data.lock.Lock()
-	for k, v := range successorData.Map {
-		KID := hashString(k)
-		if between(successorPre.ID, KID, o.ID, true) {
-			o.Data.Map[k] = v
-		}
-	}
-	for k := range o.Data.Map {
-		delete(successorData.Map, k)
-	}
+	err = client.Call("RPCNode.MoveKVPairs", new(big.Int).Set(o.ID), &o.Data.Map)
 	o.Data.lock.Unlock()
-	successorData.lock.Unlock()
-	/* ---- finish move k-v pair */
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: MoveKVPairs", err)
+		return false
+	}
 
 	// Notify the successor of the current node
-	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, nil)
+	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, new(int))
 	if err != nil {
+		_ = client.Close()
 		fmt.Println("Error: Node.Notify error: ", err)
 		return false
 	}
@@ -201,16 +204,22 @@ func (o *Node) Join(addr string) bool {
 // method Quit() let the current node quit the chord ring
 // note that the current node has predecessor and successor
 func (o *Node) Quit() {
+	o.FixSuccessors()
+	if o.Successor[1].Addr == o.Addr {
+		fmt.Println("Quit success")
+		return
+	}
 	o.MoveAllDataToSuccessor()
 
 	// set the predecessor's successor
-	client, err := rpc.DialHTTP("tcp", o.Predecessor.Addr)
+	client, err := Dial(o.Predecessor.Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(4): ", err)
 		return
 	}
-	err = client.Call("RPCNode.SetSuccessor", o.Successor[1], nil)
+	err = client.Call("RPCNode.SetSuccessor", o.Successor[1], new(int))
 	if err != nil {
+		_ = client.Close()
 		fmt.Println("Error: Node.SetSuccessor error: ", err)
 		return
 	}
@@ -221,13 +230,14 @@ func (o *Node) Quit() {
 	}
 
 	// set the successor's predecessor
-	client, err = rpc.DialHTTP("tcp", o.Successor[1].Addr)
+	client, err = Dial(o.Successor[1].Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(5): ", err)
 		return
 	}
-	err = client.Call("RPCNode.SetPredecessor", *o.Predecessor, nil)
+	err = client.Call("RPCNode.SetPredecessor", *o.Predecessor, new(int))
 	if err != nil {
+		_ = client.Close()
 		fmt.Println("Error: Node.SetPredecessor error: ", err)
 		return
 	}
@@ -236,6 +246,9 @@ func (o *Node) Quit() {
 		fmt.Println("Error: Close client error: ", err)
 		return
 	}
+
+	o.ON = false
+	fmt.Println("Quit success")
 }
 
 // method Stabilize() maintain the current successor of node o
@@ -244,17 +257,18 @@ func (o *Node) Stabilize(infinite bool) {
 	if infinite == false {
 		o.simpleStabilize()
 	} else {
-		for {
+		for o.ON == true {
 			o.simpleStabilize()
-			time.Sleep(Second)
+			time.Sleep(Second / 4)
 		}
 	}
+	fmt.Println("Error: stabilize quit", o.Addr)
 }
 
 // method Notify() update the predecessor of node p
 // note that node o is the predecessor of node p
 // called when o.stabilize()
-func (o *Node) Notify(pred *Edge, res interface{}) error {
+func (o *Node) Notify(pred *Edge, res *int) error {
 	if o.Predecessor == nil || between(o.Predecessor.ID, pred.ID, o.ID, false) {
 		o.Predecessor = pred
 	}
@@ -265,11 +279,23 @@ func (o *Node) Notify(pred *Edge, res interface{}) error {
 // called periodically, with goroutine
 func (o *Node) FixFingers() {
 	o.FingerIndex = 1
-	for {
-		err := o.FindSuccessor(&lookupType{jump(o.Addr, o.FingerIndex), 0}, &o.Finger[o.FingerIndex])
-		if err != nil {
-			fmt.Println("Error: FixFingers Error: ", err)
-			return
+	for o.ON == true {
+		if o.Successor[1].Addr != o.Finger[1].Addr {
+			o.FingerIndex = 1
+		}
+
+		var lookup LookupType
+		for i := 0; i < 5; i++ {
+			lookup = LookupType{jump(o.ID, o.FingerIndex), 0}
+			err := o.FindSuccessor(&lookup, &o.Finger[o.FingerIndex])
+			if err == nil {
+				break
+			} else if i == 4 {
+				fmt.Println("Error: FixFingers error, quit FixFingers,", o.Addr)
+				return
+			}
+			fmt.Println("Fix finger waiting...", i)
+			time.Sleep(Second / 4)
 		}
 
 		edge := o.Finger[o.FingerIndex]
@@ -277,12 +303,12 @@ func (o *Node) FixFingers() {
 		o.FingerIndex++
 		if o.FingerIndex > M {
 			o.FingerIndex = 1
-			return
+			continue
 		}
 
 		for {
-			if between(o.ID, jump(o.Addr, o.FingerIndex), edge.ID, true) {
-				o.Finger[o.FingerIndex] = edge
+			if between(o.ID, jump(o.ID, o.FingerIndex), edge.ID, true) {
+				o.Finger[o.FingerIndex] = Edge{edge.Addr, new(big.Int).Set(edge.ID)}
 				o.FingerIndex++
 				if o.FingerIndex > M {
 					o.FingerIndex = 1
@@ -293,84 +319,85 @@ func (o *Node) FixFingers() {
 			}
 		}
 
-		time.Sleep(Second)
+		time.Sleep(Second / 4)
 	}
 }
 
 // method CheckPredecessor() checks whether the predecessor is failed
 // called periodically, with goroutine
 func (o *Node) CheckPredecessor() {
-	for {
+	for o.ON == true {
 		if o.Predecessor == nil {
 			return
 		}
 		if !o.Ping(o.Predecessor.Addr) {
 			o.Predecessor = nil
 		}
-		time.Sleep(Second)
+		time.Sleep(Second / 4)
 	}
 }
 
-// put a key into the chord ring
+// put a Key into the chord ring
 func (o *Node) Put(key, value string) bool {
 	keyID := hashString(key)
 
 	var res Edge
-	err := o.FindSuccessor(&lookupType{new(big.Int).Set(keyID), 0}, &res)
+	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
 	if err != nil {
 		fmt.Println("Error: Put error: ", err)
 		return false
 	}
 
-	client, err := rpc.DialHTTP("tcp", res.Addr)
+	client, err := Dial(res.Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(6): ", err)
 		return false
 	}
 
-	var Data *KVMap
-	err = client.Call("RPCNode.GetData", nil, &Data)
+	var success bool
+	err = client.Call("RPCNode.PutValue", KVPair{key, value}, &success)
 	if err != nil {
-		fmt.Println("Error: Calling Node.GetData: ", err)
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.PutValue: ", err)
 		return false
 	}
-
-	Data.lock.Lock()
-	Data.Map[key] = value // Do I need to return false?
-	Data.lock.Unlock()
-
 	err = client.Close()
 	if err != nil {
 		fmt.Println("Error: Close client error: ", err)
 		return false
 	}
-	return true
+
+	fmt.Println("Put at", res.Addr, ": Key =", key, "Value =", value)
+	return success
 }
 
-// get a key
+// get a Key
 func (o *Node) Get(key string) (string, bool) {
 	keyID := hashString(key)
 
 	var res Edge
-	err := o.FindSuccessor(&lookupType{new(big.Int).Set(keyID), 0}, &res)
+	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
 	if err != nil {
-		fmt.Println("Error: Put error: ", err)
+		fmt.Println("Error: Get error: ", err)
 		return *new(string), false
 	}
 
-	client, err := rpc.DialHTTP("tcp", res.Addr)
+	client, err := Dial(res.Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(7): ", err)
 		return *new(string), false
 	}
 
-	var value *string
-	err = client.Call("RPCNode.GetValue", nil, &value)
+	var value string
+	err = client.Call("RPCNode.GetValue", key, &value)
 	if err != nil {
-		fmt.Println("Error: Calling Node.GetData: ", err)
-		return *new(string), false
-	}
-	if value == nil {
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return *new(string), false
+		}
+
+		fmt.Println("Get not found at", res.Addr, ": Key =", key)
 		return *new(string), false
 	}
 
@@ -380,30 +407,32 @@ func (o *Node) Get(key string) (string, bool) {
 		return *new(string), false
 	}
 
-	return *value, true
+	fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
+	return value, true
 }
 
-// delete a key
+// delete a Key
 func (o *Node) Delete(key string) bool {
 	keyID := hashString(key)
 
 	var res Edge
-	err := o.FindSuccessor(&lookupType{new(big.Int).Set(keyID), 0}, &res)
+	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
 	if err != nil {
-		fmt.Println("Error: Put error: ", err)
+		fmt.Println("Error: Delete error: ", err)
 		return false
 	}
 
-	client, err := rpc.DialHTTP("tcp", res.Addr)
+	client, err := Dial(res.Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error: ", err)
+		fmt.Println("Error: Dialing error(8): ", err)
 		return false
 	}
 
-	var Data *KVMap
-	err = client.Call("RPCNode.GetData", nil, &Data)
+	var success bool
+	err = client.Call("RPCNode.DeleteValue", key, &success)
 	if err != nil {
-		fmt.Println("Error: Calling Node.GetData: ", err)
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.DeleteValue: ", err)
 		return false
 	}
 	err = client.Close()
@@ -412,13 +441,31 @@ func (o *Node) Delete(key string) bool {
 		return false
 	}
 
-	Data.lock.Lock()
-	_, ok := Data.Map[key]
-	if ok == true {
-		delete(Data.Map, key)
-		Data.lock.Unlock()
+	if success == true {
+		fmt.Println("Delete success at", res.Addr, ": Key =", key)
 		return true
 	}
-	Data.lock.Unlock()
+	fmt.Println("Delete not found at", res.Addr, ": Key =", key)
 	return false
+}
+
+// method Dump()
+func (o *Node) Dump() {
+	fmt.Println("---------- DUMP ----------")
+	fmt.Println("Addr:", o.Addr)
+	fmt.Println("ID:", o.ID)
+	fmt.Println("Successor:", o.Successor)
+	fmt.Println("Finger Table:", o.Finger)
+
+	if o.Predecessor == nil {
+		fmt.Println("Predecessor: nil")
+	} else {
+		fmt.Println("Predecessor:", o.Predecessor)
+	}
+
+	o.Data.lock.Lock()
+	fmt.Println("K-V pairs:", o.Data.Map)
+	o.Data.lock.Unlock()
+	fmt.Println("K-V pairs end")
+	fmt.Println("-------- DUMP END --------")
 }

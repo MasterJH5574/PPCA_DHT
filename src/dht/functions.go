@@ -4,8 +4,11 @@ package chord
 
 import (
 	"crypto/sha1"
+	"fmt"
 	"math/big"
 	"net"
+	"net/rpc"
+	"time"
 )
 
 var (
@@ -21,8 +24,7 @@ func hashString(elt string) *big.Int {
 }
 
 // used to calculate the destination of finger entries
-func jump(addr string, power int) *big.Int {
-	n := hashString(addr)
+func jump(n *big.Int, power int) *big.Int {
 	gap := new(big.Int).Exp(two, big.NewInt(int64(power)-1), nil)
 	res := new(big.Int).Add(n, gap)
 	return new(big.Int).Mod(res, hashMod)
@@ -72,4 +74,20 @@ func GetLocalAddress() string {
 	}
 
 	return localaddress
+}
+
+// function Dial to dial a given address
+func Dial(addr string) (*rpc.Client, error) {
+	var res error
+	for i := 0; i < 10; i++ {
+		client, err := rpc.Dial("tcp", addr)
+		if err == nil {
+			return client, err
+		} else {
+			fmt.Println("Dial waiting...")
+		}
+		res = err
+		time.Sleep(Second)
+	}
+	return nil, res
 }

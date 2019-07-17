@@ -4,15 +4,12 @@ package main
 
 import (
 	"bufio"
-	chord "dht"
 	"fmt"
 	"message"
-	"net"
-	"net/http"
-	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func getLine() []string {
@@ -35,7 +32,7 @@ func Help() {
 }
 
 // function Port() set the current port
-func Port(newPort string, port *string) {
+func Port(newPort string, port *int) {
 	portInt, err := strconv.Atoi(newPort)
 	if err != nil {
 		fmt.Println("Error: ", err)
@@ -44,7 +41,7 @@ func Port(newPort string, port *string) {
 		fmt.Printf("Error: Invalid port\n")
 		message.ShowMoreHelp()
 	} else {
-		*port = strconv.Itoa(portInt)
+		*port = portInt
 
 		message.PrintTime()
 		fmt.Printf("port: set port to %d\n", portInt)
@@ -52,90 +49,48 @@ func Port(newPort string, port *string) {
 }
 
 // function Create() creates a new chord ring based on the current node
-func Create(o *chord.RPCNode, port string, createdOrJoined *bool) {
-	err := rpc.Register(*o)
-	if err != nil {
-		fmt.Println("Error: rpc.Register error: ", err)
-		return
-	}
-	rpc.HandleHTTP()
-
-	listen, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		fmt.Println("Error: Listen error: ", err)
-		return
-	}
-	o.Listen = listen
-	o.O.Init(port)
-	o.O.Create()
-
-	go http.Serve(listen, nil)
-	go o.O.Stabilize(true)
-	go o.O.FixFingers()
-	go o.O.CheckPredecessor()
-
+func Create(o *dhtNode, createdOrJoined *bool) {
+	(*o).Create()
 	*createdOrJoined = true
 
-	message.PrintTime()
-	fmt.Printf("create: a new ring is created\n")
+	//message.PrintTime()
+	//fmt.Printf("create: success at %s\n", (*o).GetAddr())
 }
 
 // function Join() let the current node join a chord ring
-func Join(o *chord.RPCNode, port, addr string, createdOrJoined *bool) {
-	err := rpc.Register(*o)
-	if err != nil {
-		fmt.Println("Error: rpc.Register error: ", err)
-		return
-	}
-	rpc.HandleHTTP()
-
-	listen, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		fmt.Println("Error: Listen error: ", err)
-		return
-	}
-	o.Listen = listen
-	o.O.Init(port)
-	o.O.Join(addr)
-
-	go http.Serve(listen, nil)
-	go o.O.Stabilize(true)
-	go o.O.FixFingers()
-	go o.O.CheckPredecessor()
-
+func Join(o *dhtNode, addr string, createdOrJoined *bool) {
+	(*o).Join(addr)
 	*createdOrJoined = true
 
-	message.PrintTime()
-	fmt.Printf("join: join a ring containing %s\n", addr)
+	//message.PrintTime()
+	//fmt.Printf("join: join a ring containing %s\n", addr)
 }
 
 // function Quit()
-func Quit(o *chord.RPCNode) {
-	o.O.Stabilize(false)
-	if o.O.Successor[1].Addr != o.O.Addr {
-		o.O.Quit()
+func Quit(o *dhtNode, createdOrJoined *bool) {
+	message.PrintTime()
+	if *createdOrJoined == false {
+		fmt.Println("quit")
+		return
 	}
 
-	err := o.Listen.Close()
-	if err != nil {
-		fmt.Println("Error: listen close error: ", err)
-	}
-	message.PrintTime()
+	(*o).Quit()
 	fmt.Println("quit")
 }
 
-func Put(o *chord.RPCNode, key, value string) {
-	success := o.O.Put(key, value)
+func Put(o *dhtNode, key, value string) {
+	message.PrintTime()
+	success := (*o).Put(key, value)
 	if success == false {
 		fmt.Println("Put: cannot put", key, value)
 		return
 	}
 
-	message.PrintTime()
-	fmt.Println("Put: ", key, value)
+	//message.PrintTime()
+	//fmt.Println("Put: ", key, value)
 }
 
-func PutRandom(o *chord.RPCNode, str string) {
+func PutRandom(o *dhtNode, str string) {
 	n, err := strconv.Atoi(str)
 	if err != nil {
 		fmt.Println("Invalid command: ", err)
@@ -143,6 +98,7 @@ func PutRandom(o *chord.RPCNode, str string) {
 	}
 
 	for i := 0; i < n; i++ {
+		message.PrintTime()
 		key, value := randString(32), randString(32)
 		Put(o, key, value)
 	}
@@ -151,37 +107,48 @@ func PutRandom(o *chord.RPCNode, str string) {
 	fmt.Println("Randomly put finished")
 }
 
-func Get(o *chord.RPCNode, key string) {
-	value, success := o.O.Get(key)
+func Get(o *dhtNode, key string) {
+	message.PrintTime()
+	//value, success := o.O.Get(key)
+	success, _ := (*o).Get(key)
 	if success == false {
-		fmt.Println("Get: Not Found: ", key)
+		//fmt.Println("Get: Not Found: ", key)
 		return
 	}
 
-	message.PrintTime()
-	fmt.Println("Get: the key of ", key, " is ", value)
+	//message.PrintTime()
+	//fmt.Println("Get: the key of ", key, " is ", value)
 }
 
-func Delete(o *chord.RPCNode, key string) {
-	success := o.O.Delete(key)
-	if success != false {
-		fmt.Println("Delete: not found: ", key)
+func Delete(o *dhtNode, key string) {
+	message.PrintTime()
+	success := (*o).Del(key)
+	if success == false {
+		//fmt.Println("Delete: not found: ", key)
 		return
 	}
 
-	message.PrintTime()
-	fmt.Println("Delete ", key)
+	//message.PrintTime()
+	//fmt.Println("Delete ", key)
+}
+
+func Dump(o *dhtNode) {
+	(*o).Dump()
 }
 
 func commandLine() {
 	randomInit()
+	fmt.Println("Hello!")
 
 	// create a new node for current server
-	var o chord.RPCNode
-	o.O = new(chord.Node)
+	var o *dhtNode
+	//o.O = new(chord.Node)
 
-	port := "7722" // abbr of PPCA
+	//port := "7722" // abbr of PPCA
+	port := 1000
 	createdOrJoined := false
+
+	wg := new(sync.WaitGroup)
 
 	for running := true; running == true; {
 		args := getLine()
@@ -214,7 +181,9 @@ func commandLine() {
 			} else if createdOrJoined {
 				message.HasJoined()
 			} else {
-				Create(&o, port, &createdOrJoined)
+				o = NewNode(port)
+				(*o).Run(wg)
+				Create(o, &createdOrJoined)
 			}
 		case "join":
 			if len(args) != 2 {
@@ -222,7 +191,9 @@ func commandLine() {
 			} else if createdOrJoined {
 				message.HasJoined()
 			} else {
-				Join(&o, port, args[1], &createdOrJoined)
+				o = NewNode(port)
+				(*o).Run(wg)
+				Join(o, args[1], &createdOrJoined)
 			}
 
 		// quitting
@@ -230,7 +201,7 @@ func commandLine() {
 			if len(args) != 1 {
 				message.InvalidCommand()
 			} else {
-				Quit(&o)
+				Quit(o, &createdOrJoined)
 				running = false
 			}
 
@@ -239,27 +210,38 @@ func commandLine() {
 			if len(args) != 3 {
 				message.InvalidCommand()
 			} else {
-				Put(&o, args[1], args[2])
+				Put(o, args[1], args[2])
 			}
 		case "putrandom":
 			if len(args) != 2 {
 				message.InvalidCommand()
 			} else {
-				PutRandom(&o, args[1])
+				PutRandom(o, args[1])
 			}
 		case "get":
 			if len(args) != 2 {
 				message.InvalidCommand()
 			} else {
-				Get(&o, args[1])
+				Get(o, args[1])
 			}
 		case "delete":
 			if len(args) != 2 {
 				message.InvalidCommand()
 			} else {
-				Delete(&o, args[1])
+				Delete(o, args[1])
 			}
 
+		// dump
+		case "dump":
+			if len(args) != 1 {
+				message.InvalidCommand()
+			} else {
+				Dump(o)
+			}
+
+		default:
+			fmt.Printf("Please enter the command.\n" +
+				"With any problem you can enter \"help\" to show help information.\n")
 		}
 	}
 }
