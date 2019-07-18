@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -344,10 +345,13 @@ func (o *Node) FixFingers() {
 // called periodically, with goroutine
 func (o *Node) CheckPredecessor() {
 	for o.ON == true {
+		//fmt.Println("check predecessor", o.Addr)
 		if o.Predecessor == nil {
-			return
+			time.Sleep(Second / 4)
+			continue
 		}
 		if !o.Ping(o.Predecessor.Addr) {
+			fmt.Println(o.Addr, "predecessor:", o.Predecessor.Addr, "-> nil")
 			o.Predecessor = nil
 		}
 		time.Sleep(Second / 4)
@@ -356,125 +360,185 @@ func (o *Node) CheckPredecessor() {
 
 // put a Key into the chord ring
 func (o *Node) Put(key, value string) bool {
-	keyID := hashString(key)
-
-	var res Edge
-	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
-	if err != nil {
-		fmt.Println("Error: Put error: ", err)
-		return false
-	}
-
-	if Ping(res.Addr) == false {
-		fmt.Println("Error: Not connected(6)")
-		return false
-	}
-	client, err := Dial(res.Addr)
-	if err != nil {
-		fmt.Println("Error: Dialing error(6): ", err)
-		return false
-	}
-
 	var success bool
-	err = client.Call("RPCNode.PutValue", KVPair{key, value}, &success)
-	if err != nil {
-		_ = client.Close()
-		fmt.Println("Error: Calling Node.PutValue: ", err)
-		return false
-	}
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return false
+	for i := 0; i < 5; i++ {
+		var res Edge
+		k := key + ".bak" + strconv.Itoa(i)
+		keyID := hashString(k)
+		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
+		if err != nil {
+			fmt.Println("Error: Put error: ", err)
+			return false
+		}
+
+		if Ping(res.Addr) == false {
+			fmt.Println("Error: Not connected(6)")
+			return false
+		}
+		client, err := Dial(res.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error(6): ", err)
+			return false
+		}
+
+		err = client.Call("RPCNode.PutValue", KVPair{k, value}, &success)
+		if err != nil {
+			_ = client.Close()
+			fmt.Println("Error: Calling Node.PutValue: ", err)
+			return false
+		}
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return false
+		}
+		fmt.Println("Put at", res.Addr, ": Key =", k, "Value =", value)
 	}
 
-	fmt.Println("Put at", res.Addr, ": Key =", key, "Value =", value)
+	fmt.Println("Put success: Key =", key, "Value =", value)
 	return success
 }
 
 // get a Key
 func (o *Node) Get(key string) (string, bool) {
-	keyID := hashString(key)
-
-	var res Edge
-	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
-	if err != nil {
-		fmt.Println("Error: Get error: ", err)
-		return *new(string), false
-	}
-
-	if Ping(res.Addr) == false {
-		fmt.Println("Error: Not connected(7)")
-		return *new(string), false
-	}
-	client, err := Dial(res.Addr)
-	if err != nil {
-		fmt.Println("Error: Dialing error(7): ", err)
-		return *new(string), false
-	}
-
+	var status [5]bool
+	var ok bool
 	var value string
-	err = client.Call("RPCNode.GetValue", key, &value)
-	if err != nil {
+
+	for i := 0; i < 5; i++ {
+		var res Edge
+		k := key + ".bak" + strconv.Itoa(i)
+		keyID := hashString(k)
+		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
+		if err != nil {
+			fmt.Println("Error: Get error: ", err)
+			return *new(string), false
+		}
+
+		if Ping(res.Addr) == false {
+			fmt.Println("Error: Not connected(7)")
+			return *new(string), false
+		}
+		client, err := Dial(res.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error(7): ", err)
+			return *new(string), false
+		}
+
+		var val string
+		err = client.Call("RPCNode.GetValue", k, &val)
+		if err == nil {
+			status[i] = true
+			ok = true
+			value = val
+			//length := len(val)
+			//value = val[:length - 5]
+		}
+
 		err = client.Close()
 		if err != nil {
 			fmt.Println("Error: Close client error: ", err)
 			return *new(string), false
 		}
+	}
 
-		fmt.Println("Get not found at", res.Addr, ": Key =", key)
+	if ok == false {
+		fmt.Println("Get not found: Key =", key)
 		return *new(string), false
 	}
 
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return *new(string), false
+	// supplement
+	for i := 0; i < 5; i++ {
+		if status[i] == true {
+			continue
+		}
+
+		var res Edge
+		k := key + ".bak" + strconv.Itoa(i)
+		keyID := hashString(k)
+		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
+		if err != nil {
+			fmt.Println("Error: Supplement error: ", err)
+			return value, true
+		}
+
+		if Ping(res.Addr) == false {
+			fmt.Println("Error: Not connected(6)")
+			return value, true
+		}
+		client, err := Dial(res.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error(6): ", err)
+			return value, true
+		}
+
+		var success bool
+		err = client.Call("RPCNode.PutValue", KVPair{k, value}, &success)
+		if err != nil {
+			_ = client.Close()
+			fmt.Println("Error: Calling Node.PutValue: ", err)
+			return value, true
+		}
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return value, true
+		}
+		fmt.Println("Supplement at", res.Addr, ": Key =", k, "Value =", value)
 	}
 
-	fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
+	fmt.Println("Get success: Key =", key, "Value =", value)
 	return value, true
 }
 
 // delete a Key
 func (o *Node) Delete(key string) bool {
-	keyID := hashString(key)
+	var ok bool
 
-	var res Edge
-	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
-	if err != nil {
-		fmt.Println("Error: Delete error: ", err)
-		return false
+	for i := 0; i < 5; i++ {
+		var res Edge
+		k := key + ".bak" + strconv.Itoa(i)
+		keyID := hashString(k)
+		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
+		if err != nil {
+			fmt.Println("Error: Delete error: ", err)
+			continue
+		}
+
+		if Ping(res.Addr) == false {
+			fmt.Println("Error: Not connected(8)")
+			continue
+		}
+		client, err := Dial(res.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error(8): ", err)
+			continue
+		}
+
+		var success bool
+		err = client.Call("RPCNode.DeleteValue", k, &success)
+		if err != nil {
+			_ = client.Close()
+			fmt.Println("Error: Calling Node.DeleteValue: ", err)
+			continue
+		}
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			continue
+		}
+
+		if success == true {
+			ok = true
+			fmt.Println("Delete success at", res.Addr, ": Key =", k)
+		}
 	}
 
-	if Ping(res.Addr) == false {
-		fmt.Println("Error: Not connected(8)")
-		return false
+	if ok == true {
+		fmt.Println("Delete success: Key =", key)
+	} else {
+		fmt.Println("Delete not found: Key =", key)
 	}
-	client, err := Dial(res.Addr)
-	if err != nil {
-		fmt.Println("Error: Dialing error(8): ", err)
-		return false
-	}
-
-	var success bool
-	err = client.Call("RPCNode.DeleteValue", key, &success)
-	if err != nil {
-		_ = client.Close()
-		fmt.Println("Error: Calling Node.DeleteValue: ", err)
-		return false
-	}
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return false
-	}
-
-	if success == true {
-		fmt.Println("Delete success at", res.Addr, ": Key =", key)
-		return true
-	}
-	fmt.Println("Delete not found at", res.Addr, ": Key =", key)
 	return false
 }
 
