@@ -17,6 +17,7 @@ type dhtNode interface {
 	Create()
 	Join(addr string) bool
 	Quit()
+	ForceQuit()
 	Ping(addr string) bool
 
 	GetAddr() string
@@ -102,6 +103,15 @@ func (o *client) Quit() {
 	o.wg.Add(-1)
 }
 
+func (o *client) ForceQuit() {
+	o.O.O.ON = false
+	err := o.O.Listen.Close()
+	if err != nil {
+		fmt.Println("Error: listen close error when force quit: ", err)
+	}
+	fmt.Println("Force quit success")
+}
+
 func (o *client) Ping(addr string) bool {
 	return o.O.O.Ping(addr)
 }
@@ -112,8 +122,4 @@ func (o *client) GetAddr() string {
 
 func (o *client) Dump() {
 	o.O.O.Dump()
-}
-
-func (o *client) HaHa() {
-
 }

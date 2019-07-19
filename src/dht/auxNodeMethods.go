@@ -20,7 +20,7 @@ func (o *Node) PutValue(kv KVPair, success *bool) error {
 	o.Data.lock.Lock()
 	o.Data.Map[kv.Key] = kv.Value
 	o.Data.lock.Unlock()
-	*success = true // do i need to return false?
+	*success = true
 	return nil
 }
 
@@ -47,6 +47,37 @@ func (o *Node) DeleteValue(key string, success *bool) error {
 		*success = false
 	}
 	o.Data.lock.Unlock()
+	return nil
+}
+
+// method PutValueSuccessor() put value to the successor's DataPre
+func (o *Node) PutValueSuccessor(kv KVPair, success *bool) error {
+	o.FixSuccessors()
+	if Ping(o.Successor[1].Addr) == false {
+		return errors.New("Error: Not connected[6] ")
+	}
+	client, err := Dial(o.Successor[1].Addr)
+	if err != nil {
+		return err
+	}
+	err = client.Call("RPCNode.PutValueDataPre", kv, success)
+	if err != nil {
+		_ = client.Close()
+		return err
+	}
+	err = client.Close()
+	if err != nil {
+		return err
+	}
+	*success = true
+	return nil
+}
+
+func (o *Node) PutValueDataPre(kv KVPair, success *bool) error {
+	o.DataPre.lock.Lock()
+	o.DataPre.Map[kv.Key] = kv.Value
+	o.DataPre.lock.Unlock()
+	*success = true
 	return nil
 }
 
@@ -104,18 +135,39 @@ func (o *Node) MoveKVPairs(newNode *big.Int, res *map[string]string) error {
 	if cnt == FailTimes {
 		return errors.New("Predecessor not found when Join ")
 	}
-
+	o.DataPre.lock.Lock()
 	o.Data.lock.Lock()
+	o.DataPre.Map = make(map[string]string)
 	for k, v := range o.Data.Map {
 		KID := hashString(k)
 		if between(o.Predecessor.ID, KID, newNode, true) {
 			(*res)[k] = v
+			o.DataPre.Map[k] = v
 		}
 	}
 	for k := range *res {
 		delete(o.Data.Map, k)
 	}
 	o.Data.lock.Unlock()
+	o.DataPre.lock.Unlock()
+	return nil
+}
+
+// method MoveDataPre() called when Join(), move successor's DataPre to my Data
+func (o *Node) MoveDataPre(args int, res *map[string]string) error {
+	if args == 0 {
+		o.DataPre.lock.Lock()
+		for k, v := range o.DataPre.Map {
+			(*res)[k] = v
+		}
+		o.DataPre.lock.Unlock()
+	} else {
+		o.Data.lock.Lock()
+		for k, v := range o.Data.Map {
+			(*res)[k] = v
+		}
+		o.Data.lock.Unlock()
+	}
 	return nil
 }
 
@@ -168,13 +220,29 @@ func (o *Node) SetSuccessor(edge Edge, res *int) error {
 // method SetPredecessor()
 func (o *Node) SetPredecessor(edge Edge, res *int) error {
 	o.Predecessor = &edge
+	if Ping(o.Predecessor.Addr) == false {
+		return errors.New("Error: Not connected[5] ")
+	}
+	client, err := Dial(o.Predecessor.Addr)
+	if err != nil {
+		return err
+	}
+	o.DataPre.lock.Lock()
+	o.DataPre.Map = make(map[string]string)
+	err = client.Call("RPCNode.MoveDataPre", 0, &o.DataPre.Map)
+	o.DataPre.lock.Unlock()
+	err = client.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 // method simpleStabilize() stabilize once
 func (o *Node) simpleStabilize() {
 	o.FixSuccessors()
-	``
+	oldSuccessor := o.Successor[1]
+
 	if Ping(o.Successor[1].Addr) == false {
 		//fmt.Println("Error: Not connected[2]")
 		return
@@ -185,11 +253,41 @@ func (o *Node) simpleStabilize() {
 		return
 	}
 
+	defer func() {
+		err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, new(int))
+		if err != nil {
+			_ = client.Close()
+			fmt.Println("Error: Node.Notify error: ", err)
+			return
+		}
+
+		var list [successorListLen + 1]Edge
+		err = client.Call("RPCNode.GetSuccessorList", 0, &list)
+		if err != nil {
+			_ = client.Close()
+			fmt.Println("Error: Call GetSuccessorList Error", err)
+			return
+		}
+		o.sLock.Lock()
+		for i := 2; i <= successorListLen; i++ {
+			o.Successor[i] = list[i-1]
+		}
+		o.sLock.Unlock()
+
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			return
+		}
+	}()
+
 	var successorPre Edge
 	err = client.Call("RPCNode.GetPredecessor", 0, &successorPre)
 	if err != nil {
-		_ = client.Close()
-		fmt.Println("Error: Calling Node.GetPredecessor: ", err, o.Addr, "successor", o.Successor[1].Addr)
+		//fmt.Println("Error: Calling Node.GetPredecessor: ", err, o.Addr, "successor", o.Successor[1].Addr)
+		return
+	}
+	if !Ping(successorPre.Addr) {
 		return
 	}
 
@@ -204,7 +302,7 @@ func (o *Node) simpleStabilize() {
 		}
 
 		if Ping(o.Successor[1].Addr) == false {
-			fmt.Println("Error: Not connected[3]")
+			fmt.Println("Error: Not connected[3]", oldSuccessor)
 			return
 		}
 		client, err = Dial(o.Successor[1].Addr)
@@ -213,32 +311,6 @@ func (o *Node) simpleStabilize() {
 			fmt.Println("Error: Dialing error[3]: ", err, o.Addr, "successorPre", successorPre.Addr)
 			return
 		}
-	}
-
-	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, new(int))
-	if err != nil {
-		_ = client.Close()
-		fmt.Println("Error: Node.Notify error: ", err)
-		return
-	}
-
-	var list [successorListLen + 1]Edge
-	err = client.Call("RPCNode.GetSuccessorList", 0, &list)
-	if err != nil {
-		_ = client.Close()
-		fmt.Println("Error: Call GetSuccessorList Error", err)
-		return
-	}
-	o.sLock.Lock()
-	for i := 2; i <= successorListLen; i++ {
-		o.Successor[i] = list[i-1]
-	}
-	o.sLock.Unlock()
-
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return
 	}
 }
 

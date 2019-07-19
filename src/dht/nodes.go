@@ -43,7 +43,8 @@ type Node struct {
 	Predecessor *Edge
 	Finger      [M + 1]Edge
 
-	Data KVMap // map with mutex lock
+	Data    KVMap // map with mutex lock
+	DataPre KVMap
 
 	FingerIndex int
 	ON          bool
@@ -60,6 +61,7 @@ func (o *Node) Init(port string) {
 	o.Addr = GetLocalAddress() + ":" + port
 	o.ID = hashString(o.Addr)
 	o.Data.Map = make(map[string]string)
+	o.DataPre.Map = make(map[string]string)
 }
 
 // method FindSuccessor returns an edge pointing to the successor of ID in pos
@@ -185,6 +187,15 @@ func (o *Node) Join(addr string) bool {
 	o.sLock.Unlock()
 
 	/* ---- move k-v pairs ---- */
+	o.DataPre.lock.Lock()
+	err = client.Call("RPCNode.MoveDataPre", 0, &o.DataPre.Map)
+	o.DataPre.lock.Unlock()
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: MoveDataPre", err)
+		return false
+	}
+
 	o.Data.lock.Lock()
 	err = client.Call("RPCNode.MoveKVPairs", new(big.Int).Set(o.ID), &o.Data.Map)
 	o.Data.lock.Unlock()
@@ -286,8 +297,26 @@ func (o *Node) Stabilize(infinite bool) {
 // note that node o is the predecessor of node p
 // called when o.stabilize()
 func (o *Node) Notify(pred *Edge, res *int) error {
+	oldPre := o.Predecessor
 	if o.Predecessor == nil || between(o.Predecessor.ID, pred.ID, o.ID, false) {
 		o.Predecessor = pred
+	}
+	if oldPre != o.Predecessor && o.Predecessor != nil {
+		if Ping(o.Predecessor.Addr) == false {
+			return errors.New("Error: Not connected(9) ")
+		}
+		client, err := Dial(o.Predecessor.Addr)
+		if err != nil {
+			return err
+		}
+		o.DataPre.lock.Lock()
+		o.DataPre.Map = make(map[string]string)
+		err = client.Call("RPCNode.MoveDataPre", 1, &o.DataPre.Map)
+		o.DataPre.lock.Unlock()
+		err = client.Close()
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -345,10 +374,21 @@ func (o *Node) FixFingers() {
 func (o *Node) CheckPredecessor() {
 	for o.ON == true {
 		if o.Predecessor == nil {
-			return
+			time.Sleep(Second / 4)
+			continue
 		}
 		if !o.Ping(o.Predecessor.Addr) {
+			fmt.Println(o.Addr, "predecessor:", o.Predecessor.Addr, "-> nil")
 			o.Predecessor = nil
+
+			o.DataPre.lock.Lock()
+			o.Data.lock.Lock()
+			for k, v := range o.DataPre.Map {
+				o.Data.Map[k] = v
+			}
+			o.DataPre.Map = make(map[string]string)
+			o.Data.lock.Unlock()
+			o.DataPre.lock.Unlock()
 		}
 		time.Sleep(Second / 4)
 	}
@@ -380,6 +420,12 @@ func (o *Node) Put(key, value string) bool {
 	if err != nil {
 		_ = client.Close()
 		fmt.Println("Error: Calling Node.PutValue: ", err)
+		return false
+	}
+	err = client.Call("RPCNode.PutValueSuccessor", KVPair{key, value}, new(bool))
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.PutValueSuccessor: ", err)
 		return false
 	}
 	err = client.Close()
