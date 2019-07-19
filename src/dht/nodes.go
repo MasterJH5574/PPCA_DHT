@@ -381,10 +381,27 @@ func (o *Node) CheckPredecessor() {
 			fmt.Println(o.Addr, "predecessor:", o.Predecessor.Addr, "-> nil")
 			o.Predecessor = nil
 
+			o.FixSuccessors()
+			if !Ping(o.Successor[1].Addr) {
+				fmt.Println("Error: Not connected(10)")
+				continue
+			}
+			client, err := Dial(o.Successor[1].Addr)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
 			o.DataPre.lock.Lock()
 			o.Data.lock.Lock()
 			for k, v := range o.DataPre.Map {
 				o.Data.Map[k] = v
+				err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
+				if err != nil {
+					o.Data.lock.Unlock()
+					o.DataPre.lock.Unlock()
+					_ = client.Close()
+					fmt.Println(err)
+				}
 			}
 			o.DataPre.Map = make(map[string]string)
 			o.Data.lock.Unlock()
@@ -510,6 +527,12 @@ func (o *Node) Delete(key string) bool {
 		fmt.Println("Error: Calling Node.DeleteValue: ", err)
 		return false
 	}
+	err = client.Call("RPCNode.DeleteValueSuccessor", key, new(bool))
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.DeleteValueSuccessor: ", err)
+		return false
+	}
 	err = client.Close()
 	if err != nil {
 		fmt.Println("Error: Close client error: ", err)
@@ -541,6 +564,8 @@ func (o *Node) Dump() {
 	o.Data.lock.Lock()
 	fmt.Println("K-V pairs:", o.Data.Map)
 	o.Data.lock.Unlock()
-	fmt.Println("K-V pairs end")
+	o.DataPre.lock.Lock()
+	fmt.Println("DataPre  :", o.DataPre.Map)
+	o.DataPre.lock.Unlock()
 	fmt.Println("-------- DUMP END --------")
 }

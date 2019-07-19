@@ -112,12 +112,13 @@ func test() {
 		id -= 5
 
 		fmt.Println("Sleep 5 seconds")
-		time.Sleep(5 * second)
+		time.Sleep(10 * second)
 		for i := 0; i < id; i++ {
 			(*node[i]).Dump()
 		}
 
 		KVTest()
+
 	}
 
 }

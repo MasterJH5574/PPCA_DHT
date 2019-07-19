@@ -38,16 +38,24 @@ func (o *RPCNode) GetValue(key string, value *string) error {
 	return o.O.GetValue(key, value)
 }
 
+func (o *RPCNode) DeleteValue(key string, success *bool) error {
+	return o.O.DeleteValue(key, success)
+}
+
 func (o *RPCNode) PutValueSuccessor(kv KVPair, success *bool) error {
 	return o.O.PutValueSuccessor(kv, success)
+}
+
+func (o *RPCNode) DeleteValueSuccessor(key string, success *bool) error {
+	return o.O.DeleteValueSuccessor(key, success)
 }
 
 func (o *RPCNode) PutValueDataPre(kv KVPair, success *bool) error {
 	return o.O.PutValueDataPre(kv, success)
 }
 
-func (o *RPCNode) DeleteValue(key string, success *bool) error {
-	return o.O.DeleteValue(key, success)
+func (o *RPCNode) DeleteValueDataPre(key string, success *bool) error {
+	return o.O.DeleteValueDataPre(key, success)
 }
 
 func (o *RPCNode) MoveKVPairs(newNode *big.Int, res *map[string]string) error {

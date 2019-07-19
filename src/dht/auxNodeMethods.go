@@ -73,9 +73,38 @@ func (o *Node) PutValueSuccessor(kv KVPair, success *bool) error {
 	return nil
 }
 
+func (o *Node) DeleteValueSuccessor(key string, success *bool) error {
+	o.FixSuccessors()
+	if Ping(o.Successor[1].Addr) == false {
+		return errors.New("Error: Not connected[7] ")
+	}
+	client, err := Dial(o.Successor[1].Addr)
+	if err != nil {
+		return err
+	}
+	err = client.Call("RPCNode.DeleteValueDataPre", key, success)
+	if err != nil {
+		_ = client.Close()
+		return err
+	}
+	err = client.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (o *Node) PutValueDataPre(kv KVPair, success *bool) error {
 	o.DataPre.lock.Lock()
 	o.DataPre.Map[kv.Key] = kv.Value
+	o.DataPre.lock.Unlock()
+	*success = true
+	return nil
+}
+
+func (o *Node) DeleteValueDataPre(key string, success *bool) error {
+	o.DataPre.lock.Lock()
+	delete(o.DataPre.Map, key)
 	o.DataPre.lock.Unlock()
 	*success = true
 	return nil
@@ -173,13 +202,33 @@ func (o *Node) MoveDataPre(args int, res *map[string]string) error {
 
 // method QuitMoveData()
 func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
+	o.FixSuccessors()
+	if !Ping(o.Successor[1].Addr) {
+		return errors.New("Error: Not connected[8] ")
+	}
+	client, err := Dial(o.Successor[1].Addr)
+	if err != nil {
+		return err
+	}
 	Data.lock.Lock()
 	o.Data.lock.Lock()
 	for k, v := range Data.Map {
 		o.Data.Map[k] = v
+		err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
+		if err != nil {
+			o.Data.lock.Unlock()
+			Data.lock.Unlock()
+			_ = client.Close()
+			return err
+		}
 	}
 	o.Data.lock.Unlock()
 	Data.lock.Unlock()
+
+	err = client.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
