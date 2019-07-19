@@ -18,12 +18,12 @@ var node [20000]*dhtNode
 var PUT int
 
 func KVTest() {
-	fmt.Println("Sleep 5 seconds")
+	fmt.Println("Sleep 30 seconds")
 	time.Sleep(5 * second)
 
 	// insert
 	fmt.Println("Start to test insert")
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 700; i++ {
 		str := strconv.Itoa(PUT)
 		//k, v := randString(10), randString(10)
 		//MAP[k] = v
@@ -44,7 +44,7 @@ func KVTest() {
 			log.Fatalln("Get incorrect when get key", k)
 		}
 		cnt++
-		if cnt == 200 {
+		if cnt == 400 {
 			break
 		}
 	}
@@ -52,11 +52,11 @@ func KVTest() {
 	// delete
 	fmt.Println("Start to test delete")
 	cnt = 0
-	var str [150]string
+	var str [300]string
 	for k := range MAP {
 		str[cnt] = k
 		cnt++
-		if cnt == 150 {
+		if cnt == 300 {
 			break
 		}
 	}
@@ -65,7 +65,7 @@ func KVTest() {
 		delete(MAP, k)
 	}
 
-	fmt.Println("Sleep 5 seconds")
+	fmt.Println("Sleep 10 seconds")
 	time.Sleep(5 * second)
 }
 
@@ -87,7 +87,7 @@ func test() {
 
 	for t := 0; t < 5; t++ {
 		fmt.Println("Start to test join")
-		for i := 0; i < 15; i++ {
+		for i := 0; i < 30; i++ {
 			node[id] = NewNode(id + 2000)
 			(*node[id]).Run(wg)
 			(*node[id]).Join(localAddr + ":" + strconv.Itoa(2000+rand.Int()%id))
@@ -105,18 +105,11 @@ func test() {
 		KVTest()
 
 		fmt.Println("Start to test quit")
-		for i := 5; i >= 1; i-- {
-			//(*node[id-i]).Quit()
-			(*node[id-i]).ForceQuit()
-			time.Sleep(3 * second)
-			//for j := 0; j < id - 5; j++ {
-			//	(*node[j]).Dump()
-			//}
-			//for j := id - i + 1; j < id; j++ {
-			//	(*node[j]).Dump()
-			//}
+		for i := 10; i >= 1; i-- {
+			(*node[id-i]).Quit()
+			time.Sleep(2 * second)
 		}
-		id -= 5
+		id -= 10
 
 		fmt.Println("Sleep 5 seconds")
 		time.Sleep(5 * second)
@@ -128,3 +121,5 @@ func test() {
 	}
 
 }
+
+// AFuLtLjPNW

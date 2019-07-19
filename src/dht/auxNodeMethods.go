@@ -174,8 +174,7 @@ func (o *Node) SetPredecessor(edge Edge, res *int) error {
 // method simpleStabilize() stabilize once
 func (o *Node) simpleStabilize() {
 	o.FixSuccessors()
-	oldSuccessor := o.Successor[1]
-
+	``
 	if Ping(o.Successor[1].Addr) == false {
 		//fmt.Println("Error: Not connected[2]")
 		return
@@ -186,41 +185,11 @@ func (o *Node) simpleStabilize() {
 		return
 	}
 
-	defer func() {
-		err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, new(int))
-		if err != nil {
-			_ = client.Close()
-			fmt.Println("Error: Node.Notify error: ", err)
-			return
-		}
-
-		var list [successorListLen + 1]Edge
-		err = client.Call("RPCNode.GetSuccessorList", 0, &list)
-		if err != nil {
-			_ = client.Close()
-			fmt.Println("Error: Call GetSuccessorList Error", err)
-			return
-		}
-		o.sLock.Lock()
-		for i := 2; i <= successorListLen; i++ {
-			o.Successor[i] = list[i-1]
-		}
-		o.sLock.Unlock()
-
-		err = client.Close()
-		if err != nil {
-			fmt.Println("Error: Close client error: ", err)
-			return
-		}
-	}()
-
 	var successorPre Edge
 	err = client.Call("RPCNode.GetPredecessor", 0, &successorPre)
 	if err != nil {
-		//fmt.Println("Error: Calling Node.GetPredecessor: ", err, o.Addr, "successor", o.Successor[1].Addr)
-		return
-	}
-	if !Ping(successorPre.Addr) {
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.GetPredecessor: ", err, o.Addr, "successor", o.Successor[1].Addr)
 		return
 	}
 
@@ -235,7 +204,7 @@ func (o *Node) simpleStabilize() {
 		}
 
 		if Ping(o.Successor[1].Addr) == false {
-			fmt.Println("Error: Not connected[3]", oldSuccessor)
+			fmt.Println("Error: Not connected[3]")
 			return
 		}
 		client, err = Dial(o.Successor[1].Addr)
@@ -244,6 +213,32 @@ func (o *Node) simpleStabilize() {
 			fmt.Println("Error: Dialing error[3]: ", err, o.Addr, "successorPre", successorPre.Addr)
 			return
 		}
+	}
+
+	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, new(int))
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Node.Notify error: ", err)
+		return
+	}
+
+	var list [successorListLen + 1]Edge
+	err = client.Call("RPCNode.GetSuccessorList", 0, &list)
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Call GetSuccessorList Error", err)
+		return
+	}
+	o.sLock.Lock()
+	for i := 2; i <= successorListLen; i++ {
+		o.Successor[i] = list[i-1]
+	}
+	o.sLock.Unlock()
+
+	err = client.Close()
+	if err != nil {
+		fmt.Println("Error: Close client error: ", err)
+		return
 	}
 }
 

@@ -17,7 +17,6 @@ type dhtNode interface {
 	Create()
 	Join(addr string) bool
 	Quit()
-	ForceQuit()
 	Ping(addr string) bool
 
 	GetAddr() string
@@ -101,15 +100,6 @@ func (o *client) Quit() {
 		fmt.Println("Error: listen close error: ", err)
 	}
 	o.wg.Add(-1)
-}
-
-func (o *client) ForceQuit() {
-	o.O.O.ON = false
-	err := o.O.Listen.Close()
-	if err != nil {
-		fmt.Println("Error: listen close error when force quit: ", err)
-	}
-	fmt.Println("Force quit success")
 }
 
 func (o *client) Ping(addr string) bool {
