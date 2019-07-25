@@ -73,6 +73,10 @@ func (o *Node) Init(port string) {
 // method FindSuccessor returns an edge pointing to the successor of ID in pos
 // this method may be called by other goroutine
 func (o *Node) FindSuccessor(pos *LookupType, res *Edge) error {
+	if o.Successor[1].Addr == o.Addr {
+		*res = Edge{o.Addr, new(big.Int).Set(o.ID)}
+		return nil
+	}
 	pos.cnt++
 	if pos.cnt >= FailTimes {
 		return errors.New("Lookup failure: not found ")
@@ -249,7 +253,10 @@ func (o *Node) Quit() {
 	if o.Successor[1].Addr == o.Addr {
 		//fmt.Println("Quit success")
 		return
+	} else if o.Successor[1].Addr == o.Predecessor.Addr {
+		return
 	}
+
 	o.MoveAllDataToSuccessor()
 
 	// set the predecessor's successor
@@ -352,6 +359,7 @@ func (o *Node) FixFingers() {
 	o.FingerIndex = 1
 	for o.ON == true {
 		if o.Successor[1].Addr != o.Finger[1].Addr {
+			fmt.Println("hahaha")
 			o.FingerIndex = 1
 		}
 
@@ -592,5 +600,6 @@ func (o *Node) Dump() {
 	o.DataPre.lock.Lock()
 	fmt.Println("DataPre  :", o.DataPre.Map)
 	o.DataPre.lock.Unlock()
+	fmt.Println("ON:", o.ON)
 	fmt.Println("-------- DUMP END --------")
 }

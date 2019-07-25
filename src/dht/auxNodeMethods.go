@@ -143,7 +143,10 @@ func (o *Node) MoveAllDataToSuccessor() {
 		return
 	}
 
+	fmt.Println("to quit move data")
+	time.Sleep(Second / 2)
 	err = client.Call("RPCNode.QuitMoveData", o.Data, new(int))
+	fmt.Println("end quit move data")
 	if err != nil {
 		_ = client.Close()
 		fmt.Println("Error: Calling Node.QuitMoveData: ", err)
@@ -205,7 +208,9 @@ func (o *Node) MoveDataPre(args int, res *map[string]string) error {
 // method QuitMoveData()
 func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
 	fmt.Println("1")
-	o.FixSuccessors()
+	if o.Successor[1].Addr != o.Addr {
+		//o.FixSuccessors()
+	}
 	fmt.Println("111")
 	if !Ping(o.Successor[1].Addr) {
 		return errors.New("Error: Not connected[8] ")
@@ -297,7 +302,9 @@ func (o *Node) SetPredecessor(edge Edge, res *int) error {
 
 // method simpleStabilize() stabilize once
 func (o *Node) simpleStabilize() {
-	o.FixSuccessors()
+	if o.Successor[1].Addr != o.Addr {
+		o.FixSuccessors()
+	}
 	oldSuccessor := o.Successor[1]
 
 	if Ping(o.Successor[1].Addr) == false {
@@ -468,7 +475,9 @@ func (o *Node) AgreeJoin(addr string, agree *bool) error {
 }
 
 func (o *Node) PrintMessage(pair StrPair, res *int) error {
-	o.FixSuccessors()
+	if o.Successor[1].Addr != o.Addr {
+		o.FixSuccessors()
+	}
 	if o.Successor[1].Addr != pair.Addr {
 		go func() {
 			if Ping(o.Successor[1].Addr) == false {
