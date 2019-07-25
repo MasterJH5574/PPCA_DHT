@@ -3,10 +3,12 @@
 package chord
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"os"
 	"time"
 )
 
@@ -202,17 +204,23 @@ func (o *Node) MoveDataPre(args int, res *map[string]string) error {
 
 // method QuitMoveData()
 func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
+	fmt.Println("1")
 	o.FixSuccessors()
+	fmt.Println("111")
 	if !Ping(o.Successor[1].Addr) {
 		return errors.New("Error: Not connected[8] ")
 	}
+	fmt.Println("11")
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
 		return err
 	}
+	fmt.Println("2")
 	Data.lock.Lock()
 	o.Data.lock.Lock()
+	fmt.Println("3")
 	for k, v := range Data.Map {
+		fmt.Println("4")
 		o.Data.Map[k] = v
 		err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
 		if err != nil {
@@ -413,4 +421,67 @@ func (o *Node) FixSuccessors() {
 		o.Successor[i] = list[i-1]
 	}
 	o.sLock.Unlock()
+}
+
+func (o *Node) AgreeJoin(addr string, agree *bool) error {
+	fmt.Println("A user in", addr, "wants to join the chat room. Do you agree?(y/n)")
+	fmt.Println("If you don't response within 20 seconds, we assume that you enter \"n\".")
+	o.PrintLock.Lock()
+	ch := make(chan bool)
+	stopCh := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				fmt.Printf(" >>> ")
+				reader := bufio.NewReader(os.Stdin)
+				text, err := reader.ReadString('\n')
+				if err != nil {
+					log.Fatal(err)
+				}
+				text = text[:len(text)-1]
+				if text[0] == 'y' || text[0] == 'Y' {
+					ch <- true
+					return
+				} else if text[0] == 'n' || text[0] == 'N' {
+					ch <- false
+					return
+				} else {
+					fmt.Println("Invalid response. Please enter \"y\" or \"n\".")
+				}
+			}
+		}
+	}()
+	select {
+	case ok := <-ch:
+		*agree = ok
+	case <-time.After(20 * time.Second):
+		fmt.Println("We assume that you enter \"n\" because you didn't response within 20 seconds.")
+		*agree = false
+		stopCh <- struct{}{}
+	}
+	*agree = true
+	o.PrintLock.Unlock()
+	return nil
+}
+
+func (o *Node) PrintMessage(pair StrPair, res *int) error {
+	o.FixSuccessors()
+	if o.Successor[1].Addr != pair.Addr {
+		go func() {
+			if Ping(o.Successor[1].Addr) == false {
+				return
+			}
+			client, err := Dial(o.Successor[1].Addr)
+			if err != nil {
+				return
+			}
+			err = client.Call("RPCNode.PrintMessage", pair, new(int))
+			_ = client.Close()
+		}()
+	}
+	fmt.Println(pair.Str)
+	return nil
 }

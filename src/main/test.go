@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	chord "dht"
 	"fmt"
@@ -122,5 +123,4 @@ func test() {
 	}
 
 }
-
-// AFuLtLjPNW
+*/

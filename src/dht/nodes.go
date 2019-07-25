@@ -33,6 +33,10 @@ type KVPair struct {
 	Key, Value string
 }
 
+type StrPair struct {
+	Str, Addr string
+}
+
 type Node struct {
 	Addr string
 	ID   *big.Int
@@ -48,6 +52,8 @@ type Node struct {
 
 	FingerIndex int
 	ON          bool
+
+	PrintLock sync.Mutex
 }
 
 // define lookup type
@@ -139,12 +145,26 @@ func (o *Node) Create() {
 func (o *Node) Join(addr string) bool {
 	// client: the node which the current node joins from
 	if Ping(addr) == false {
-		fmt.Println("Error: Not connected(2)")
+		//fmt.Println("Error: Not connected(2)")
+		fmt.Println("Join failure. The addr cannot be connected(2).")
 		return false
 	}
 	client, err := Dial(addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error(2): ", err)
+		fmt.Println("Join failure. The addr cannot be dialed(2).", err)
+		return false
+	}
+
+	var agree bool
+	err = client.Call("RPCNode.AgreeJoin", o.Addr, &agree)
+	if err != nil {
+		fmt.Println("Join failure. Error: Calling AgreeJoin:", err)
+		_ = client.Close()
+		return false
+	}
+	if agree == false {
+		fmt.Println("Join failure. You are declined by the user of the address", addr+".")
+		_ = client.Close()
 		return false
 	}
 
@@ -153,23 +173,23 @@ func (o *Node) Join(addr string) bool {
 		&LookupType{new(big.Int).Set(o.ID), 0}, &o.Successor[1])
 	if err != nil {
 		_ = client.Close()
-		log.Fatalln("Error: Calling Node.FindSuccessor: ", err)
+		log.Fatalln("Join failure. Error: Calling Node.FindSuccessor: ", err)
 		return false
 	}
 	err = client.Close()
 	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
+		fmt.Println("Join failure. Error: Close client error: ", err)
 		return false
 	}
 
 	// client: the successor of the current node
 	if Ping(o.Successor[1].Addr) == false {
-		fmt.Println("Error: Not connected(3)")
+		fmt.Println("Join failure. Error: Not connected(3)")
 		return false
 	}
 	client, err = Dial(o.Successor[1].Addr)
 	if err != nil {
-		fmt.Println("Error: Dialing error(3): ", err)
+		fmt.Println("Join failure. Error: Dialing error(3): ", err)
 		return false
 	}
 
@@ -177,7 +197,7 @@ func (o *Node) Join(addr string) bool {
 	err = client.Call("RPCNode.GetSuccessorList", 0, &list)
 	if err != nil {
 		_ = client.Close()
-		fmt.Println("Error: Call GetSuccessorList Error", err)
+		fmt.Println("Join failure. Error: Call GetSuccessorList Error", err)
 		return false
 	}
 	o.sLock.Lock()
@@ -192,7 +212,7 @@ func (o *Node) Join(addr string) bool {
 	o.DataPre.lock.Unlock()
 	if err != nil {
 		_ = client.Close()
-		fmt.Println("Error: MoveDataPre", err)
+		fmt.Println("Join failure. Error: MoveDataPre", err)
 		return false
 	}
 
@@ -201,7 +221,7 @@ func (o *Node) Join(addr string) bool {
 	o.Data.lock.Unlock()
 	if err != nil {
 		_ = client.Close()
-		fmt.Println("Error: MoveKVPairs", err)
+		fmt.Println("Join failure. Error: MoveKVPairs", err)
 		return false
 	}
 
@@ -209,13 +229,13 @@ func (o *Node) Join(addr string) bool {
 	err = client.Call("RPCNode.Notify", &Edge{o.Addr, new(big.Int).Set(o.ID)}, new(int))
 	if err != nil {
 		_ = client.Close()
-		fmt.Println("Error: Node.Notify error: ", err)
+		fmt.Println("Join failure. Error: Node.Notify error: ", err)
 		return false
 	}
 
 	err = client.Close()
 	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
+		fmt.Println("Join failure. Error: Close client error: ", err)
 		return false
 	}
 
@@ -225,9 +245,9 @@ func (o *Node) Join(addr string) bool {
 // method Quit() let the current node quit the chord ring
 // note that the current node has predecessor and successor
 func (o *Node) Quit() {
-	o.FixSuccessors()
+	//o.FixSuccessors()
 	if o.Successor[1].Addr == o.Addr {
-		fmt.Println("Quit success")
+		//fmt.Println("Quit success")
 		return
 	}
 	o.MoveAllDataToSuccessor()
@@ -277,7 +297,7 @@ func (o *Node) Quit() {
 	}
 
 	o.ON = false
-	fmt.Println("Quit success")
+	//fmt.Println("Quit success")
 }
 
 // method Stabilize() maintain the current successor of node o
@@ -297,12 +317,17 @@ func (o *Node) Stabilize(infinite bool) {
 // note that node o is the predecessor of node p
 // called when o.stabilize()
 func (o *Node) Notify(pred *Edge, res *int) error {
+	if Ping(pred.Addr) == false {
+		return nil
+	}
+
 	oldPre := o.Predecessor
 	if o.Predecessor == nil || between(o.Predecessor.ID, pred.ID, o.ID, false) {
 		o.Predecessor = pred
 	}
 	if oldPre != o.Predecessor && o.Predecessor != nil {
 		if Ping(o.Predecessor.Addr) == false {
+			fmt.Println(oldPre, o.Predecessor)
 			return errors.New("Error: Not connected(9) ")
 		}
 		client, err := Dial(o.Predecessor.Addr)

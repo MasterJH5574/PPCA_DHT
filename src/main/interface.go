@@ -1,34 +1,21 @@
 package main
 
 import (
+	"bufio"
 	"dht"
 	"fmt"
 	"message"
 	"net"
 	"net/rpc"
-	"sync"
+	"os"
+	"time"
 )
-
-type dhtNode interface {
-	Get(k string) (bool, string)
-	Put(k string, v string) bool
-	Del(k string) bool
-	Run(wg *sync.WaitGroup)
-	Create()
-	Join(addr string) bool
-	Quit()
-	ForceQuit()
-	Ping(addr string) bool
-
-	GetAddr() string
-	Dump()
-}
 
 type client struct {
 	O    *chord.RPCNode
 	Port string
+	Name string
 
-	wg     *sync.WaitGroup
 	server *rpc.Server
 	// Listening bool
 }
@@ -46,17 +33,7 @@ func (o *client) Del(k string) bool {
 	return o.O.O.Delete(k)
 }
 
-func (o *client) Run(wg *sync.WaitGroup) {
-	wg.Add(1)
-	o.wg = wg
-
-	/*err := o.server.Register(o.O)
-	if err != nil {
-		fmt.Println("Error: rpc.Register error: ", err)
-		return
-	}*/
-	//o.server.HandleHTTP()
-
+func (o *client) Run() {
 	listen, err := net.Listen("tcp", ":"+o.Port)
 	if err != nil {
 		fmt.Println("Error: Listen error: ", err)
@@ -73,34 +50,32 @@ func (o *client) Create() {
 	go o.O.O.Stabilize(true)
 	go o.O.O.FixFingers()
 	go o.O.O.CheckPredecessor()
-
-	message.PrintTime()
-	fmt.Println("create: success", o.O.O.Addr)
 }
 
 func (o *client) Join(addr string) bool {
+	fmt.Printf("You're trying to join a chat room.\n" +
+		"Please wait for the agreement of the user of the address.\n")
 	res := o.O.O.Join(addr)
 
-	message.PrintTime()
 	if res == true {
 		go o.O.O.Stabilize(true)
 		go o.O.O.FixFingers()
 		go o.O.O.CheckPredecessor()
-		fmt.Println("join:", o.O.O.Addr, "join a ring containing", addr)
-	} else {
-		fmt.Println("join: join failure", addr)
+		fmt.Printf("You join the chat room successfully! Try chatting with others now!\n")
+		time.Sleep(time.Second)
+		_ = o.O.O.PrintMessage(chord.StrPair{Str: message.CurrentTime() + " " + o.Name + " joins the chat room.",
+			Addr: o.O.O.Addr}, new(int))
 	}
-
 	return res
 }
 
 func (o *client) Quit() {
 	err := o.O.Listen.Close()
+	o.O.O.ON = false
 	o.O.O.Quit()
 	if err != nil {
 		fmt.Println("Error: listen close error: ", err)
 	}
-	o.wg.Add(-1)
 }
 
 func (o *client) ForceQuit() {
@@ -122,4 +97,17 @@ func (o *client) GetAddr() string {
 
 func (o *client) Dump() {
 	o.O.O.Dump()
+}
+
+func (o *client) Say() {
+	fmt.Printf(" >>> ")
+	reader := bufio.NewReader(os.Stdin)
+	text, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	text = text[:len(text)-1]
+	text = message.CurrentTime() + " " + o.Name + ": " + text
+	_ = o.O.O.PrintMessage(chord.StrPair{Str: text, Addr: o.O.O.Addr}, new(int))
 }

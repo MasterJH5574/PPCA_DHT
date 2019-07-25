@@ -10,6 +10,7 @@ import (
 type RPCNode struct {
 	O      *Node
 	Listen net.Listener
+	name   string
 }
 
 /* method used for rpc call:
@@ -84,4 +85,12 @@ func (o *RPCNode) SetSuccessor(edge Edge, res *int) error {
 
 func (o *RPCNode) SetPredecessor(edge Edge, res *int) error {
 	return o.O.SetPredecessor(edge, res)
+}
+
+func (o *RPCNode) AgreeJoin(addr string, agree *bool) error {
+	return o.O.AgreeJoin(addr, agree)
+}
+
+func (o *RPCNode) PrintMessage(pair StrPair, res *int) error {
+	return o.O.PrintMessage(pair, res)
 }
