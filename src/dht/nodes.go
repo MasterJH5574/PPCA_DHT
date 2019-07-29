@@ -302,20 +302,28 @@ func (o *Node) Notify(pred *Edge, res *int) error {
 		o.Predecessor = pred
 	}
 	if oldPre != o.Predecessor && o.Predecessor != nil {
-		if Ping(o.Predecessor.Addr) == false {
-			return errors.New("Error: Not connected(9) ")
-		}
-		client, err := Dial(o.Predecessor.Addr)
-		if err != nil {
-			return err
-		}
-		o.DataPre.lock.Lock()
-		o.DataPre.Map = make(map[string]string)
-		err = client.Call("RPCNode.MoveDataPre", 1, &o.DataPre.Map)
-		o.DataPre.lock.Unlock()
-		err = client.Close()
-		if err != nil {
-			return err
+		if o.Predecessor.Addr != o.Addr {
+			if Ping(o.Predecessor.Addr) == false {
+				return errors.New("Error: Not connected(9) ")
+			}
+			client, err := Dial(o.Predecessor.Addr)
+			if err != nil {
+				return err
+			}
+			o.DataPre.lock.Lock()
+			o.DataPre.Map = make(map[string]string)
+			err = client.Call("RPCNode.MoveDataPre", 1, &o.DataPre.Map)
+			o.DataPre.lock.Unlock()
+			err = client.Close()
+			if err != nil {
+				return err
+			}
+		} else {
+			o.DataPre.lock.Lock()
+			o.Data.lock.Lock()
+			o.DataPre.Map = o.Data.Map
+			o.Data.lock.Unlock()
+			o.DataPre.lock.Unlock()
 		}
 	}
 	return nil
@@ -382,30 +390,41 @@ func (o *Node) CheckPredecessor() {
 			o.Predecessor = nil
 
 			o.FixSuccessors()
-			if !Ping(o.Successor[1].Addr) {
-				fmt.Println("Error: Not connected(10)")
-				continue
-			}
-			client, err := Dial(o.Successor[1].Addr)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			o.DataPre.lock.Lock()
-			o.Data.lock.Lock()
-			for k, v := range o.DataPre.Map {
-				o.Data.Map[k] = v
-				err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
-				if err != nil {
-					o.Data.lock.Unlock()
-					o.DataPre.lock.Unlock()
-					_ = client.Close()
-					fmt.Println(err)
+			if o.Successor[1].Addr != o.Addr {
+				if !Ping(o.Successor[1].Addr) {
+					fmt.Println("Error: Not connected(10)")
+					continue
 				}
+				client, err := Dial(o.Successor[1].Addr)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				o.DataPre.lock.Lock()
+				o.Data.lock.Lock()
+				for k, v := range o.DataPre.Map {
+					o.Data.Map[k] = v
+					err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
+					if err != nil {
+						o.Data.lock.Unlock()
+						o.DataPre.lock.Unlock()
+						_ = client.Close()
+						fmt.Println(err)
+					}
+				}
+				o.DataPre.Map = make(map[string]string)
+				o.Data.lock.Unlock()
+				o.DataPre.lock.Unlock()
+			} else {
+				o.DataPre.lock.Lock()
+				o.Data.lock.Lock()
+				for k, v := range o.DataPre.Map {
+					o.Data.Map[k] = v
+				}
+				o.DataPre.Map = make(map[string]string)
+				o.Data.lock.Unlock()
+				o.DataPre.lock.Unlock()
 			}
-			o.DataPre.Map = make(map[string]string)
-			o.Data.lock.Unlock()
-			o.DataPre.lock.Unlock()
 		}
 		time.Sleep(Second / 4)
 	}

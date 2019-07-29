@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 func getLine() []string {
@@ -74,7 +73,7 @@ func Quit(o *dhtNode, createdOrJoined *bool) {
 		return
 	}
 
-	(*o).Quit()
+	(*o).ForceQuit()
 	fmt.Println("quit")
 }
 
@@ -141,14 +140,14 @@ func commandLine() {
 	fmt.Println("Hello!")
 
 	// create a new node for current server
-	var o *dhtNode
+	var o dhtNode
 	//o.O = new(chord.Node)
 
 	//port := "7722" // abbr of PPCA
 	port := 1000
 	createdOrJoined := false
 
-	wg := new(sync.WaitGroup)
+	//wg := new(sync.WaitGroup)
 
 	for running := true; running == true; {
 		args := getLine()
@@ -182,8 +181,8 @@ func commandLine() {
 				message.HasJoined()
 			} else {
 				o = NewNode(port)
-				(*o).Run(wg)
-				Create(o, &createdOrJoined)
+				o.Run()
+				Create(&o, &createdOrJoined)
 			}
 		case "join":
 			if len(args) != 2 {
@@ -192,8 +191,8 @@ func commandLine() {
 				message.HasJoined()
 			} else {
 				o = NewNode(port)
-				(*o).Run(wg)
-				Join(o, args[1], &createdOrJoined)
+				o.Run()
+				Join(&o, args[1], &createdOrJoined)
 			}
 
 		// quitting
@@ -201,7 +200,7 @@ func commandLine() {
 			if len(args) != 1 {
 				message.InvalidCommand()
 			} else {
-				Quit(o, &createdOrJoined)
+				Quit(&o, &createdOrJoined)
 				running = false
 			}
 
@@ -210,25 +209,25 @@ func commandLine() {
 			if len(args) != 3 {
 				message.InvalidCommand()
 			} else {
-				Put(o, args[1], args[2])
+				Put(&o, args[1], args[2])
 			}
 		case "putrandom":
 			if len(args) != 2 {
 				message.InvalidCommand()
 			} else {
-				PutRandom(o, args[1])
+				PutRandom(&o, args[1])
 			}
 		case "get":
 			if len(args) != 2 {
 				message.InvalidCommand()
 			} else {
-				Get(o, args[1])
+				Get(&o, args[1])
 			}
 		case "delete":
 			if len(args) != 2 {
 				message.InvalidCommand()
 			} else {
-				Delete(o, args[1])
+				Delete(&o, args[1])
 			}
 
 		// dump
@@ -236,7 +235,7 @@ func commandLine() {
 			if len(args) != 1 {
 				message.InvalidCommand()
 			} else {
-				Dump(o)
+				Dump(&o)
 			}
 
 		default:

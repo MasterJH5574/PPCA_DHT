@@ -383,6 +383,7 @@ func (o *Node) FixSuccessors() {
 	}
 
 	o.Successor[1] = o.Successor[p]
+	o.sLock.Unlock()
 	var list [successorListLen + 1]Edge
 	if Ping(o.Successor[1].Addr) == false {
 		fmt.Println("Error: Not connected[4]")
@@ -390,25 +391,23 @@ func (o *Node) FixSuccessors() {
 	}
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
-		o.sLock.Unlock()
 		fmt.Println("Error: Dialing error[4]: ", err)
 		return
 	}
 
 	err = client.Call("RPCNode.GetSuccessorList", 0, &list)
 	if err != nil {
-		o.sLock.Unlock()
 		_ = client.Close()
 		fmt.Println("Error: Call GetSuccessorList Error", err)
 		return
 	}
 	err = client.Close()
 	if err != nil {
-		o.sLock.Unlock()
 		fmt.Println("Error: Close client error: ", err)
 		return
 	}
 
+	o.sLock.Lock()
 	for i := 2; i <= successorListLen; i++ {
 		o.Successor[i] = list[i-1]
 	}

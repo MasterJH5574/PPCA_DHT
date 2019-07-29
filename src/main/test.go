@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -14,7 +13,7 @@ const second = 1000 * time.Millisecond
 
 var MAP map[string]string
 var id int
-var node [20000]*dhtNode
+var node [20000]dhtNode
 var PUT int
 
 func KVTest() {
@@ -30,7 +29,7 @@ func KVTest() {
 		MAP[str] = str
 		p := rand.Int() % id
 		//(*node[p]).Put(k, v)
-		(*node[p]).Put(str, str)
+		node[p].Put(str, str)
 		PUT++
 	}
 
@@ -39,7 +38,7 @@ func KVTest() {
 	cnt := 0
 	for k, v := range MAP {
 		p := rand.Int() % id
-		_, res := (*node[p]).Get(k)
+		_, res := node[p].Get(k)
 		if res != v {
 			log.Fatalln("Get incorrect when get key", k)
 		}
@@ -61,7 +60,7 @@ func KVTest() {
 		}
 	}
 	for _, k := range str {
-		(*node[rand.Int()%id]).Del(k)
+		node[rand.Int()%id].Del(k)
 		delete(MAP, k)
 	}
 
@@ -76,11 +75,9 @@ func test() {
 
 	id = 0
 
-	wg := new(sync.WaitGroup)
-
 	node[id] = NewNode(2000)
-	(*node[id]).Run(wg)
-	(*node[id]).Create()
+	node[id].Run()
+	node[id].Create()
 	id++
 
 	localAddr := chord.GetLocalAddress()
@@ -89,8 +86,8 @@ func test() {
 		fmt.Println("Start to test join")
 		for i := 0; i < 15; i++ {
 			node[id] = NewNode(id + 2000)
-			(*node[id]).Run(wg)
-			(*node[id]).Join(localAddr + ":" + strconv.Itoa(2000+rand.Int()%id))
+			node[id].Run()
+			node[id].Join(localAddr + ":" + strconv.Itoa(2000+rand.Int()%id))
 			id++
 
 			time.Sleep(1 * second)
@@ -99,14 +96,14 @@ func test() {
 		fmt.Println("Sleep 5 seconds")
 		time.Sleep(5 * second)
 		for i := 0; i < id; i++ {
-			(*node[i]).Dump()
+			node[i].Dump()
 		}
 
 		KVTest()
 
 		fmt.Println("Start to test quit")
 		for i := 5; i >= 1; i-- {
-			(*node[id-i]).ForceQuit()
+			node[id-i].ForceQuit()
 			time.Sleep(2 * second)
 		}
 		id -= 5
@@ -114,7 +111,7 @@ func test() {
 		fmt.Println("Sleep 5 seconds")
 		time.Sleep(10 * second)
 		for i := 0; i < id; i++ {
-			(*node[i]).Dump()
+			node[i].Dump()
 		}
 
 		KVTest()

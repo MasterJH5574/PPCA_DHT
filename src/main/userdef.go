@@ -7,7 +7,7 @@ import (
 	"strconv"
 )
 
-func NewNode(port int) *dhtNode {
+func NewNode(port int) dhtNode {
 	var o client
 	o.O = new(chord.RPCNode)
 	o.O.O = new(chord.Node)
@@ -21,5 +21,5 @@ func NewNode(port int) *dhtNode {
 
 	var res dhtNode
 	res = &o
-	return &res
+	return res
 }

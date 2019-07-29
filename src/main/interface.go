@@ -13,7 +13,7 @@ type dhtNode interface {
 	Get(k string) (bool, string)
 	Put(k string, v string) bool
 	Del(k string) bool
-	Run(wg *sync.WaitGroup)
+	Run()
 	Create()
 	Join(addr string) bool
 	Quit()
@@ -46,10 +46,7 @@ func (o *client) Del(k string) bool {
 	return o.O.O.Delete(k)
 }
 
-func (o *client) Run(wg *sync.WaitGroup) {
-	wg.Add(1)
-	o.wg = wg
-
+func (o *client) Run() {
 	/*err := o.server.Register(o.O)
 	if err != nil {
 		fmt.Println("Error: rpc.Register error: ", err)
@@ -95,12 +92,15 @@ func (o *client) Join(addr string) bool {
 }
 
 func (o *client) Quit() {
-	err := o.O.Listen.Close()
-	o.O.O.Quit()
-	if err != nil {
-		fmt.Println("Error: listen close error: ", err)
-	}
-	o.wg.Add(-1)
+	o.ForceQuit()
+	/*
+		err := o.O.Listen.Close()
+		o.O.O.Quit()
+		if err != nil {
+			fmt.Println("Error: listen close error: ", err)
+		}
+		o.wg.Add(-1)
+	*/
 }
 
 func (o *client) ForceQuit() {
