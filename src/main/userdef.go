@@ -1,7 +1,7 @@
 package main
 
 import (
-	chord "dht"
+	chord "chord"
 	"log"
 	"net/rpc"
 	"strconv"

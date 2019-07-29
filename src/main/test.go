@@ -1,7 +1,7 @@
 package main
 
 import (
-	chord "dht"
+	chord "chord"
 	"fmt"
 	"log"
 	"math/rand"

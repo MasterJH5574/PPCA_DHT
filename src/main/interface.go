@@ -1,7 +1,7 @@
 package main
 
 import (
-	"dht"
+	"chord"
 	"fmt"
 	"message"
 	"net"
