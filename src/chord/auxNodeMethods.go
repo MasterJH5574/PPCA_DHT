@@ -5,7 +5,6 @@ package chord
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"time"
 )
@@ -392,7 +391,7 @@ func (o *Node) FixSuccessors() {
 		}
 	}
 	if p == successorListLen+1 {
-		log.Fatalln("Error: No valid successor!!!!")
+		fmt.Println("Error: No valid successor!!!!")
 	}
 
 	if p == 1 {
