@@ -391,7 +391,9 @@ func (o *Node) FixSuccessors() {
 		}
 	}
 	if p == successorListLen+1 {
+		o.sLock.Unlock()
 		fmt.Println("Error: No valid successor!!!!")
+		return
 	}
 
 	if p == 1 {
