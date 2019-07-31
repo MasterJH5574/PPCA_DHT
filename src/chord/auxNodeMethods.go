@@ -240,13 +240,10 @@ func (o *Node) QuitMoveData(Data KVMap, res *int) error {
 
 // method QuitMoveDataPre()
 func (o *Node) QuitMoveDataPre(DataPre KVMap, res *int) error {
-	fmt.Println(1111)
 	o.DataPre.lock.Lock()
-	o.DataPre.Map = make(map[string]string)
+	//o.DataPre.Map = make(map[string]string)
 	o.DataPre.Map = DataPre.Map
-	fmt.Println(o.DataPre.Map)
 	o.DataPre.lock.Unlock()
-	o.Dump()
 	return nil
 }
 
@@ -383,6 +380,9 @@ func (o *Node) simpleStabilize() {
 
 // method FixSuccessors fixes the successor list
 func (o *Node) FixSuccessors() {
+	if o.Successor[1].Addr == o.Addr {
+		return
+	}
 	o.sLock.Lock()
 
 	var p int
