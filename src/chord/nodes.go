@@ -71,7 +71,10 @@ func (o *Node) FindSuccessor(pos *LookupType, res *Edge) error {
 	if pos.cnt >= FailTimes {
 		return errors.New("Lookup failure: not found ")
 	}
-	o.FixSuccessors()
+	err := o.FixSuccessors()
+	if err != nil {
+		return err
+	}
 	if o.Successor[1].Addr == o.Addr || pos.ID.Cmp(o.ID) == 0 {
 		*res = Edge{o.Addr, new(big.Int).Set(o.ID)}
 	} else if between(o.ID, pos.ID, o.Successor[1].ID, true) {
@@ -118,7 +121,7 @@ func (o *Node) closestPrecedingNode(id *big.Int) Edge {
 			}
 		}
 	}
-	o.FixSuccessors()
+	_ = o.FixSuccessors()
 	if o.Ping(o.Successor[1].Addr) {
 		return Edge{o.Successor[1].Addr, new(big.Int).Set(o.Successor[1].ID)}
 	} else {
@@ -225,7 +228,11 @@ func (o *Node) Join(addr string) bool {
 // method Quit() let the current node quit the chord ring
 // note that the current node has predecessor and successor
 func (o *Node) Quit() {
-	o.FixSuccessors()
+	err := o.FixSuccessors()
+	if err != nil {
+		return
+	}
+
 	if o.Successor[1].Addr == o.Addr {
 		fmt.Println("Quit success")
 		return
@@ -389,7 +396,7 @@ func (o *Node) CheckPredecessor() {
 			fmt.Println(o.Addr, "predecessor:", o.Predecessor.Addr, "-> nil")
 			o.Predecessor = nil
 
-			o.FixSuccessors()
+			_ = o.FixSuccessors()
 			if o.Successor[1].Addr != o.Addr {
 				if !Ping(o.Successor[1].Addr) {
 					fmt.Println("Error: Not connected(10)")
