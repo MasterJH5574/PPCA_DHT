@@ -147,6 +147,12 @@ func (o *Node) MoveAllDataToSuccessor() {
 		fmt.Println("Error: Calling Node.QuitMoveData: ", err)
 		return
 	}
+	err = client.Call("RPCNode.QuitMoveDataPre", o.DataPre, new(int))
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.QuitMoveDataPre: ", err)
+		return
+	}
 	err = client.Close()
 	if err != nil {
 		fmt.Println("Error: Close client error: ", err)
@@ -201,7 +207,7 @@ func (o *Node) MoveDataPre(args int, res *map[string]string) error {
 }
 
 // method QuitMoveData()
-func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
+func (o *Node) QuitMoveData(Data KVMap, res *int) error {
 	o.FixSuccessors()
 	if !Ping(o.Successor[1].Addr) {
 		return errors.New("Error: Not connected[8] ")
@@ -229,6 +235,18 @@ func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+// method QuitMoveDataPre()
+func (o *Node) QuitMoveDataPre(DataPre KVMap, res *int) error {
+	fmt.Println(1111)
+	o.DataPre.lock.Lock()
+	o.DataPre.Map = make(map[string]string)
+	o.DataPre.Map = DataPre.Map
+	fmt.Println(o.DataPre.Map)
+	o.DataPre.lock.Unlock()
+	o.Dump()
 	return nil
 }
 
@@ -269,21 +287,21 @@ func (o *Node) SetSuccessor(edge Edge, res *int) error {
 // method SetPredecessor()
 func (o *Node) SetPredecessor(edge Edge, res *int) error {
 	o.Predecessor = &edge
-	if Ping(o.Predecessor.Addr) == false {
-		return errors.New("Error: Not connected[5] ")
-	}
-	client, err := Dial(o.Predecessor.Addr)
-	if err != nil {
-		return err
-	}
-	o.DataPre.lock.Lock()
-	o.DataPre.Map = make(map[string]string)
-	err = client.Call("RPCNode.MoveDataPre", 0, &o.DataPre.Map)
-	o.DataPre.lock.Unlock()
-	err = client.Close()
-	if err != nil {
-		return err
-	}
+	//if Ping(o.Predecessor.Addr) == false {
+	//	return errors.New("Error: Not connected[5] ")
+	//}
+	//client, err := Dial(o.Predecessor.Addr)
+	//if err != nil {
+	//	return err
+	//}
+	//o.DataPre.lock.Lock()
+	//o.DataPre.Map = make(map[string]string)
+	//err = client.Call("RPCNode.MoveDataPre", 0, &o.DataPre.Map)
+	//o.DataPre.lock.Unlock()
+	//err = client.Close()
+	//if err != nil {
+	//	return err
+	//}
 	return nil
 }
 

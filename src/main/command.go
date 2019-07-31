@@ -73,7 +73,7 @@ func Quit(o *dhtNode, createdOrJoined *bool) {
 		return
 	}
 
-	(*o).ForceQuit()
+	(*o).Quit()
 	fmt.Println("quit")
 }
 
