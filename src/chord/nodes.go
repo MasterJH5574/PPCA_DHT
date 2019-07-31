@@ -222,6 +222,7 @@ func (o *Node) Join(addr string) bool {
 		return false
 	}
 
+	time.Sleep(200 * time.Millisecond)
 	return true
 }
 
@@ -439,6 +440,7 @@ func (o *Node) CheckPredecessor() {
 
 // put a Key into the chord ring
 func (o *Node) Put(key, value string) bool {
+	time.Sleep(15 * time.Millisecond)
 	keyID := hashString(key)
 
 	var res Edge
@@ -485,6 +487,49 @@ func (o *Node) Put(key, value string) bool {
 func (o *Node) Get(key string) (string, bool) {
 	keyID := hashString(key)
 
+	for i := 0; i < 3; i++ {
+		time.Sleep(15 * time.Millisecond)
+		var res Edge
+		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
+		if err != nil {
+			fmt.Println("Error: Get error: ", err)
+			continue
+		}
+
+		if Ping(res.Addr) == false {
+			fmt.Println("Error: Not connected(7)")
+			continue
+		}
+		client, err := Dial(res.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error(7): ", err)
+			continue
+		}
+
+		var value string
+		err = client.Call("RPCNode.GetValue", key, &value)
+		if err != nil {
+			err = client.Close()
+			if err != nil {
+				fmt.Println("Error: Close client error: ", err)
+				continue
+			}
+
+			//fmt.Println("Get not found at", res.Addr, ": Key =", key)
+			continue
+		}
+
+		err = client.Close()
+		if err != nil {
+			fmt.Println("Error: Close client error: ", err)
+			continue
+		}
+
+		fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
+		return value, true
+	}
+
+	time.Sleep(15 * time.Millisecond)
 	var res Edge
 	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
 	if err != nil {
@@ -527,6 +572,7 @@ func (o *Node) Get(key string) (string, bool) {
 
 // delete a Key
 func (o *Node) Delete(key string) bool {
+	time.Sleep(15 * time.Millisecond)
 	keyID := hashString(key)
 
 	var res Edge
