@@ -96,14 +96,15 @@ func (o *client) Join(addr string) bool {
 }
 
 func (o *client) Quit() {
-	//o.ForceQuit()
+	if o.O.O.ON == false {
+		return
+	}
 	o.O.O.ON = false
-	err := o.O.Listen.Close()
 	o.O.O.Quit()
+	err := o.O.Listen.Close()
 	if err != nil {
 		fmt.Println("Error: listen close error: ", err)
 	}
-	//o.wg.Add(-1)
 }
 
 func (o *client) ForceQuit() {
