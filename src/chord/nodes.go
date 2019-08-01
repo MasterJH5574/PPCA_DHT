@@ -485,24 +485,27 @@ func (o *Node) Put(key, value string) bool {
 
 // get a Key
 func (o *Node) Get(key string) (string, bool) {
+	time.Sleep(15 * time.Millisecond)
 	keyID := hashString(key)
 
-	for i := 0; i < 3; i++ {
-		time.Sleep(15 * time.Millisecond)
+	for i := 0; i < 5; i++ {
 		var res Edge
 		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
 		if err != nil {
 			fmt.Println("Error: Get error: ", err)
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 
 		if Ping(res.Addr) == false {
 			fmt.Println("Error: Not connected(7)")
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 		client, err := Dial(res.Addr)
 		if err != nil {
 			fmt.Println("Error: Dialing error(7): ", err)
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 
@@ -512,62 +515,23 @@ func (o *Node) Get(key string) (string, bool) {
 			err = client.Close()
 			if err != nil {
 				fmt.Println("Error: Close client error: ", err)
+				time.Sleep(200 * time.Millisecond)
 				continue
 			}
 
 			//fmt.Println("Get not found at", res.Addr, ": Key =", key)
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 
-		err = client.Close()
-		if err != nil {
-			fmt.Println("Error: Close client error: ", err)
-			continue
-		}
+		_ = client.Close()
 
 		fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
 		return value, true
 	}
 
-	time.Sleep(15 * time.Millisecond)
-	var res Edge
-	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
-	if err != nil {
-		fmt.Println("Error: Get error: ", err)
-		return *new(string), false
-	}
-
-	if Ping(res.Addr) == false {
-		fmt.Println("Error: Not connected(7)")
-		return *new(string), false
-	}
-	client, err := Dial(res.Addr)
-	if err != nil {
-		fmt.Println("Error: Dialing error(7): ", err)
-		return *new(string), false
-	}
-
-	var value string
-	err = client.Call("RPCNode.GetValue", key, &value)
-	if err != nil {
-		err = client.Close()
-		if err != nil {
-			fmt.Println("Error: Close client error: ", err)
-			return *new(string), false
-		}
-
-		fmt.Println("Get not found at", res.Addr, ": Key =", key)
-		return *new(string), false
-	}
-
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return *new(string), false
-	}
-
-	fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
-	return value, true
+	fmt.Println("Get not found: Key =", key)
+	return "", false
 }
 
 // delete a Key
