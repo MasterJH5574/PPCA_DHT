@@ -103,7 +103,7 @@ func test() {
 
 		fmt.Println("Start to test quit")
 		for i := 5; i >= 1; i-- {
-			node[id-i].ForceQuit()
+			node[id-i].Quit()
 			time.Sleep(2 * second)
 		}
 		id -= 5
