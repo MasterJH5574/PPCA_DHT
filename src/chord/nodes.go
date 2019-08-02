@@ -296,7 +296,7 @@ func (o *Node) Stabilize(infinite bool) {
 	} else {
 		for o.ON == true {
 			o.simpleStabilize()
-			time.Sleep(Second / 4)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }
@@ -357,7 +357,7 @@ func (o *Node) FixFingers() {
 				return
 			}
 			fmt.Println("Fix finger waiting...", i)
-			time.Sleep(Second / 4)
+			time.Sleep(100 * time.Millisecond)
 		}
 
 		edge := o.Finger[o.FingerIndex]
@@ -381,7 +381,7 @@ func (o *Node) FixFingers() {
 			}
 		}
 
-		time.Sleep(Second / 4)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -390,7 +390,7 @@ func (o *Node) FixFingers() {
 func (o *Node) CheckPredecessor() {
 	for o.ON == true {
 		if o.Predecessor == nil {
-			time.Sleep(Second / 4)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		if !o.Ping(o.Predecessor.Addr) {
@@ -434,7 +434,7 @@ func (o *Node) CheckPredecessor() {
 				o.DataPre.lock.Unlock()
 			}
 		}
-		time.Sleep(Second / 4)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
