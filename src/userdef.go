@@ -1,14 +1,13 @@
 package main
 
 import (
-	chord "chord"
 	"fmt"
 	"log"
-	"message"
 	"net"
 	"net/rpc"
 	"strconv"
 	"sync"
+	"test/chord"
 )
 
 func NewNode(port int) dhtNode {
@@ -75,14 +74,12 @@ func (o *client) Create() {
 	go o.O.O.FixFingers()
 	go o.O.O.CheckPredecessor()
 
-	message.PrintTime()
 	fmt.Println("create: success", o.O.O.Addr)
 }
 
 func (o *client) Join(addr string) bool {
 	res := o.O.O.Join(addr)
 
-	message.PrintTime()
 	if res == true {
 		go o.O.O.Stabilize(true)
 		go o.O.O.FixFingers()
