@@ -8,28 +8,33 @@ import (
 
 func (o *Node) RPCPing(p Contact, res *PingReturn) error {
 	go o.O.updateBucket(p)
-	*res = PingReturn{Contact{o.O.ID, o.O.IP}, true}
+	*res = PingReturn{Contact{new(big.Int).Set(o.O.ID), o.O.IP}, true}
 	return nil
 }
 
 func (o *Node) RPCStore(obj StoreRequest, res *StoreReturn) error {
 	go o.O.updateBucket(obj.Header)
 	o.O.Data.lock.Lock()
-	if o.O.Data.Map[obj.Pair.Key] == nil {
-		o.O.Data.Map[obj.Pair.Key] = make(map[string]time.Time)
+	o.O.Data.Map[obj.Pair.Key] = ValueTimePair{
+		val:           obj.Pair.Val,
+		expireTime:    obj.Expire,
+		replicateTime: time.Now().Add(tReplicate),
 	}
-	o.O.Data.Map[obj.Pair.Key][obj.Pair.Val] = obj.Expire
 	o.O.Data.lock.Unlock()
-	*res = StoreReturn{Contact{o.O.ID, o.O.IP}, true}
+	*res = StoreReturn{Contact{new(big.Int).Set(o.O.ID), o.O.IP}, true}
 	return nil
 }
 
 func (o *Node) RPCFindNode(arg FindNodeRequest, res *FindNodeReturn) error {
 	go o.O.updateBucket(arg.Header)
-	p := new(big.Int).Xor(arg.Id, o.O.ID).BitLen() - 1
+	res.Header = Contact{new(big.Int).Set(o.O.ID), o.O.IP}
+	res.Closest = make([]Contact, 0)
+	p := distance(arg.Id, o.O.ID).BitLen() - 1
 	o.O.kBuckets[p].mutex.Lock()
 	if o.O.kBuckets[p].size == bucketSize {
-		*res = FindNodeReturn{Contact{o.O.ID, o.O.IP}, o.O.kBuckets[p].arr[:]}
+		for i := 0; i < bucketSize; i++ {
+			res.Closest = append(res.Closest, o.O.kBuckets[p].arr[i])
+		}
 		o.O.kBuckets[p].mutex.Unlock()
 		return nil
 	}
@@ -43,13 +48,15 @@ func (o *Node) RPCFindNode(arg FindNodeRequest, res *FindNodeReturn) error {
 		o.O.kBuckets[i].mutex.Unlock()
 	}
 	sort.Slice(arr, func(i, j int) bool {
-		return arr[i].Id.Cmp(arr[j].Id) < 0
+		return distance(arr[i].Id, arg.Id).Cmp(distance(arr[j].Id, arg.Id)) < 0
 	})
 	length := len(arr)
 	if length >= bucketSize {
-		*res = FindNodeReturn{Contact{o.O.ID, o.O.IP}, arr[:20]}
+		for i := 0; i < bucketSize; i++ {
+			res.Closest = append(res.Closest, arr[i])
+		}
 	} else {
-		*res = FindNodeReturn{Contact{o.O.ID, o.O.IP}, arr[:]}
+		res.Closest = arr
 	}
 	return nil
 }
@@ -60,20 +67,21 @@ func (o *Node) RPCFindValue(arg FindValueRequest, res *FindValueReturn) error {
 	value, ok := o.O.getValue(arg.Key)
 	if ok {
 		*res = FindValueReturn{
-			Header:  Contact{o.O.ID, o.O.IP},
+			Header:  Contact{new(big.Int).Set(o.O.ID), o.O.IP},
 			Closest: nil,
 			Val:     value,
 		}
 		return nil
 	}
 
-	p := new(big.Int).Xor(arg.HashId, o.O.ID).BitLen() - 1
+	res.Header = Contact{new(big.Int).Set(o.O.ID), o.O.IP}
+	res.Closest = make([]Contact, 0)
+	res.Val = ""
+	p := distance(arg.HashId, o.O.ID).BitLen() - 1
 	o.O.kBuckets[p].mutex.Lock()
 	if o.O.kBuckets[p].size == bucketSize {
-		*res = FindValueReturn{
-			Header:  Contact{o.O.ID, o.O.IP},
-			Closest: o.O.kBuckets[p].arr[:],
-			Val:     nil,
+		for i := 0; i < bucketSize; i++ {
+			res.Closest = append(res.Closest, o.O.kBuckets[p].arr[i])
 		}
 		o.O.kBuckets[p].mutex.Unlock()
 		return nil
@@ -88,21 +96,15 @@ func (o *Node) RPCFindValue(arg FindValueRequest, res *FindValueReturn) error {
 		o.O.kBuckets[i].mutex.Unlock()
 	}
 	sort.Slice(arr, func(i, j int) bool {
-		return arr[i].Id.Cmp(arr[j].Id) < 0
+		return distance(arr[i].Id, arg.HashId).Cmp(distance(arr[j].Id, arg.HashId)) < 0
 	})
 	length := len(arr)
 	if length >= bucketSize {
-		*res = FindValueReturn{
-			Header:  Contact{o.O.ID, o.O.IP},
-			Closest: arr[:20],
-			Val:     nil,
+		for i := 0; i < bucketSize; i++ {
+			res.Closest = append(res.Closest, arr[i])
 		}
 	} else {
-		*res = FindValueReturn{
-			Header:  Contact{o.O.ID, o.O.IP},
-			Closest: arr[:],
-			Val:     nil,
-		}
+		res.Closest = arr
 	}
 	return nil
 }

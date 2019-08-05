@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"math/big"
 	"net"
+	"net/rpc"
 	"sync"
 	"time"
 )
@@ -14,8 +15,8 @@ type Contact struct {
 }
 
 type PingReturn struct {
-	Success bool
 	Header  Contact
+	Success bool
 }
 
 type KVPair struct {
@@ -24,15 +25,14 @@ type KVPair struct {
 }
 
 type StoreRequest struct {
-	Pair      KVPair
-	Header    Contact
-	Expire    time.Time
-	Replicate bool
+	Header Contact
+	Pair   KVPair
+	Expire time.Time
 }
 
 type StoreReturn struct {
-	Success bool
 	Header  Contact
+	Success bool
 }
 
 type FindNodeRequest struct {
@@ -56,11 +56,17 @@ type Set map[string]struct{}
 type FindValueReturn struct {
 	Header  Contact
 	Closest []Contact
-	Val     Set
+	Val     string
+}
+
+type ValueTimePair struct {
+	val           string
+	expireTime    time.Time
+	replicateTime time.Time
 }
 
 type KVMap struct {
-	Map  map[string]string
+	Map  map[string]ValueTimePair
 	lock sync.Mutex
 }
 
@@ -75,7 +81,12 @@ const (
 	tRepublish = 24 * time.Hour
 	tRefresh   = time.Hour
 	tReplicate = time.Hour
+	tCheck     = time.Minute
 )
+
+func distance(x, y *big.Int) *big.Int {
+	return new(big.Int).Xor(x, y)
+}
 
 // hash functions
 func hashString(elt string) *big.Int {
@@ -117,4 +128,19 @@ func GetLocalAddress() string {
 	}
 
 	return localaddress
+}
+
+// function Dial() to dial a given address
+func Dial(addr string) (*rpc.Client, error) {
+	var err error
+	var client *rpc.Client
+	for i := 0; i < 3; i++ {
+		client, err = rpc.Dial("tcp", addr)
+		if err == nil {
+			return client, err
+		} else {
+			time.Sleep(time.Second / 2)
+		}
+	}
+	return nil, err
 }
