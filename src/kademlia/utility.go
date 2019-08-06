@@ -77,11 +77,11 @@ const (
 )
 
 const (
-	tExpire    = 24*time.Hour + 10*time.Second
-	tRepublish = 24 * time.Hour
-	tRefresh   = time.Hour
-	tReplicate = time.Hour
-	tCheck     = time.Minute
+	tExpire    = time.Minute      // 24*time.Hour + 10*time.Second
+	tRepublish = time.Minute      // 24 * time.Hour
+	tRefresh   = time.Minute      // time.Hour
+	tReplicate = time.Minute      // time.Hour
+	tCheck     = 10 * time.Second // time.Minute
 )
 
 func distance(x, y *big.Int) *big.Int {

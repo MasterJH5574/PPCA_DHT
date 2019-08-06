@@ -30,6 +30,9 @@ func (o *Node) RPCFindNode(arg FindNodeRequest, res *FindNodeReturn) error {
 	res.Header = Contact{new(big.Int).Set(o.O.ID), o.O.IP}
 	res.Closest = make([]Contact, 0)
 	p := distance(arg.Id, o.O.ID).BitLen() - 1
+	if o.O.ID.Cmp(arg.Id) == 0 {
+		p = 0
+	}
 	o.O.kBuckets[p].mutex.Lock()
 	if o.O.kBuckets[p].size == bucketSize {
 		for i := 0; i < bucketSize; i++ {
