@@ -79,8 +79,8 @@ const (
 const (
 	tExpire    = time.Minute      // 24*time.Hour + 10*time.Second
 	tRepublish = time.Minute      // 24 * time.Hour
-	tRefresh   = time.Minute      // time.Hour
-	tReplicate = time.Minute      // time.Hour
+	tRefresh   = 30 * time.Second // time.Hour
+	tReplicate = 30 * time.Second // time.Hour
 	tCheck     = 10 * time.Second // time.Minute
 )
 
@@ -143,4 +143,30 @@ func Dial(addr string) (*rpc.Client, error) {
 		}
 	}
 	return nil, err
+}
+
+func Ping(addr string) bool {
+	for i := 0; i < 3; i++ {
+		chOK := make(chan bool)
+		go func() {
+			client, err := rpc.Dial("tcp", addr)
+			if err == nil {
+				err = client.Close()
+				chOK <- true
+			} else {
+				chOK <- false
+			}
+		}()
+		select {
+		case ok := <-chOK:
+			if ok {
+				return true
+			} else {
+				continue
+			}
+		case <-time.After(time.Second / 2):
+			break
+		}
+	}
+	return false
 }

@@ -12,8 +12,6 @@ type kBucket struct {
 	arr          [bucketSize]Contact
 	mutex        sync.Mutex
 	latestUpdate time.Time
-
-	ori *node
 }
 
 func (o *kBucket) update(t Contact) {
@@ -23,6 +21,15 @@ func (o *kBucket) update(t Contact) {
 		o.mutex.Unlock()
 		o.latestUpdate = time.Now()
 	}()
+
+	for i := 0; i < o.size; i++ {
+		if Ping(o.arr[i].Ip) == false {
+			for j := i; j < o.size-1; j++ {
+				o.arr[j] = o.arr[j+1]
+			}
+			o.size--
+		}
+	}
 
 	for i := 0; i < o.size; i++ {
 		if o.arr[i].Ip == t.Ip {
@@ -38,7 +45,7 @@ func (o *kBucket) update(t Contact) {
 		o.size++
 		return
 	}
-	success := o.ori.Ping(o.arr[0].Ip)
+	success := Ping(o.arr[0].Ip)
 	if success == true {
 		tmp := o.arr[0]
 		for i := 0; i < o.size-1; i++ {

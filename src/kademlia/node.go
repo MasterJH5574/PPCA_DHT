@@ -30,9 +30,6 @@ func (o *node) Init(port string) {
 	o.ID = hashString(o.IP)
 	o.publishMap.Map = make(map[string]ValueTimePair)
 	o.Data.Map = make(map[string]ValueTimePair)
-	for i := 0; i < B; i++ {
-		o.kBuckets[i].ori = o
-	}
 }
 
 func (o *node) Join(addr string) {
@@ -287,19 +284,21 @@ func (o *node) iterativeStore(arg StoreRequest) bool {
 	return success
 }
 
-func (o *node) Publish(key, value string) bool {
+func (o *node) Publish(key, value string, firstTime bool) bool {
 	o.iterativeStore(StoreRequest{
 		Header: Contact{new(big.Int).Set(o.ID), o.IP},
 		Pair:   KVPair{key, value},
 		Expire: time.Now().Add(tExpire),
 	})
-	o.publishMap.lock.Lock()
-	o.publishMap.Map[key] = ValueTimePair{
-		val:           value,
-		expireTime:    time.Now().Add(tExpire),
-		replicateTime: time.Time{},
+	if firstTime == true {
+		o.publishMap.lock.Lock()
+		o.publishMap.Map[key] = ValueTimePair{
+			val:           value,
+			expireTime:    time.Now().Add(tExpire),
+			replicateTime: time.Time{},
+		}
+		o.publishMap.lock.Unlock()
 	}
-	o.publishMap.lock.Unlock()
 	return true
 }
 
@@ -307,12 +306,14 @@ func (o *node) GetValue(key string) (string, bool) {
 	o.Data.lock.Lock()
 	val, ok := o.Data.Map[key]
 	if ok == true {
+		o.Data.lock.Unlock()
 		return val.val, true
 	}
 	o.Data.lock.Unlock()
 	o.publishMap.lock.Lock()
 	val, ok = o.publishMap.Map[key]
 	if ok == true {
+		o.publishMap.lock.Unlock()
 		return val.val, true
 	}
 	o.publishMap.lock.Unlock()
@@ -328,8 +329,11 @@ func (o *node) Republish() {
 	for o.ON {
 		o.publishMap.lock.Lock()
 		for k, v := range o.publishMap.Map {
+			if o.ON == false {
+				return
+			}
 			if time.Now().After(v.expireTime) {
-				o.Publish(k, v.val)
+				o.Publish(k, v.val, false)
 				v.expireTime = time.Now().Add(tExpire)
 			}
 		}
@@ -340,24 +344,32 @@ func (o *node) Republish() {
 
 func (o *node) ExpireReplicate() {
 	for o.ON {
+		replicate := make([]StoreRequest, 0)
 		o.Data.lock.Lock()
 		for k, v := range o.Data.Map {
+			if o.ON == false {
+				return
+			}
 			if time.Now().After(v.expireTime) {
 				delete(o.Data.Map, k)
 			} else if v.replicateTime.IsZero() == false && time.Now().After(v.replicateTime) {
-				o.iterativeStore(StoreRequest{
+				replicate = append(replicate, StoreRequest{
 					Header: Contact{new(big.Int).Set(o.ID), o.IP},
 					Pair:   KVPair{k, v.val},
 					Expire: v.expireTime,
 				})
-				o.Data.Map[k] = ValueTimePair{
-					val:           o.Data.Map[k].val,
-					expireTime:    o.Data.Map[k].expireTime,
-					replicateTime: time.Time{},
-				}
 			}
 		}
 		o.Data.lock.Unlock()
+		for _, v := range replicate {
+			o.iterativeStore(v)
+			o.Data.Map[v.Pair.Key] = ValueTimePair{
+				val:           v.Pair.Val,
+				expireTime:    v.Expire,
+				replicateTime: time.Time{},
+			}
+		}
+
 		time.Sleep(tCheck)
 	}
 }

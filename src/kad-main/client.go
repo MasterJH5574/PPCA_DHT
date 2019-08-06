@@ -67,7 +67,7 @@ func (o *client) Quit() {
 }
 
 func (o *client) Put(key, value string) {
-	success := o.O.O.Publish(key, value)
+	success := o.O.O.Publish(key, value, true)
 	message.PrintTime()
 	if success == false {
 		fmt.Println("Put: cannot put", key, value)
