@@ -35,9 +35,10 @@ func Before() {
 func After() {
 	fmt.Printf("What can you do now? Here are 5 options you can choose.\n" +
 		" - \"say\":                 say what you want to say to everyone in the chat room\n" +
-		" - \"share <filename>\":    share a file to the chat room\n" +
-		" - \"download <filename>\": download a file which was shared\n" +
-		" - \"delete <filename>\":   delete a file which was shared\n" +
+		" - \"history\":             show the chat history in your current chat room\n" +
+		//" - \"share <filename>\":    share a file to the chat room\n" +
+		//" - \"download <filename>\": download a file which was shared\n" +
+		//" - \"delete <filename>\":   delete a file which was shared\n" +
 		" - \"quit\":                exit this program\n")
 }
 

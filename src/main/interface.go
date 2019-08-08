@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -110,4 +111,10 @@ func (o *client) Say() {
 	text = text[:len(text)-1]
 	text = message.CurrentTime() + " " + o.Name + ": " + text
 	_ = o.O.O.PrintMessage(chord.StrPair{Str: text, Addr: o.O.O.Addr}, new(int))
+
+	_, totStr := o.Get("chatHistory::totalRecordsPieces")
+	tot, _ := strconv.Atoi(totStr)
+	o.Put("chatHistory::RecordNo"+strconv.Itoa(tot), text)
+	tot++
+	o.Put("chatHistory::totalRecordsPieces", strconv.Itoa(tot))
 }

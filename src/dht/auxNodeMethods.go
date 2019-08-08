@@ -54,7 +54,10 @@ func (o *Node) DeleteValue(key string, success *bool) error {
 
 // method PutValueSuccessor() put value to the successor's DataPre
 func (o *Node) PutValueSuccessor(kv KVPair, success *bool) error {
-	o.FixSuccessors()
+	err := o.FixSuccessors()
+	if err != nil {
+		return err
+	}
 	if Ping(o.Successor[1].Addr) == false {
 		return errors.New("Error: Not connected[6] ")
 	}
@@ -76,7 +79,10 @@ func (o *Node) PutValueSuccessor(kv KVPair, success *bool) error {
 }
 
 func (o *Node) DeleteValueSuccessor(key string, success *bool) error {
-	o.FixSuccessors()
+	err := o.FixSuccessors()
+	if err != nil {
+		return err
+	}
 	if Ping(o.Successor[1].Addr) == false {
 		return errors.New("Error: Not connected[7] ")
 	}
@@ -143,13 +149,16 @@ func (o *Node) MoveAllDataToSuccessor() {
 		return
 	}
 
-	fmt.Println("to quit move data")
-	time.Sleep(Second / 2)
 	err = client.Call("RPCNode.QuitMoveData", o.Data, new(int))
-	fmt.Println("end quit move data")
 	if err != nil {
 		_ = client.Close()
 		fmt.Println("Error: Calling Node.QuitMoveData: ", err)
+		return
+	}
+	err = client.Call("RPCNode.QuitMoveDataPre", o.DataPre, new(int))
+	if err != nil {
+		_ = client.Close()
+		fmt.Println("Error: Calling Node.QuitMoveDataPre: ", err)
 		return
 	}
 	err = client.Close()
@@ -206,26 +215,21 @@ func (o *Node) MoveDataPre(args int, res *map[string]string) error {
 }
 
 // method QuitMoveData()
-func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
-	fmt.Println("1")
-	if o.Successor[1].Addr != o.Addr {
-		//o.FixSuccessors()
+func (o *Node) QuitMoveData(Data KVMap, res *int) error {
+	err := o.FixSuccessors()
+	if err != nil {
+		return err
 	}
-	fmt.Println("111")
 	if !Ping(o.Successor[1].Addr) {
 		return errors.New("Error: Not connected[8] ")
 	}
-	fmt.Println("11")
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
 		return err
 	}
-	fmt.Println("2")
 	Data.lock.Lock()
 	o.Data.lock.Lock()
-	fmt.Println("3")
 	for k, v := range Data.Map {
-		fmt.Println("4")
 		o.Data.Map[k] = v
 		err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
 		if err != nil {
@@ -242,6 +246,15 @@ func (o *Node) QuitMoveData(Data *KVMap, res *int) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+// method QuitMoveDataPre()
+func (o *Node) QuitMoveDataPre(DataPre KVMap, res *int) error {
+	o.DataPre.lock.Lock()
+	//o.DataPre.Map = make(map[string]string)
+	o.DataPre.Map = DataPre.Map
+	o.DataPre.lock.Unlock()
 	return nil
 }
 
@@ -282,28 +295,29 @@ func (o *Node) SetSuccessor(edge Edge, res *int) error {
 // method SetPredecessor()
 func (o *Node) SetPredecessor(edge Edge, res *int) error {
 	o.Predecessor = &edge
-	if Ping(o.Predecessor.Addr) == false {
-		return errors.New("Error: Not connected[5] ")
-	}
-	client, err := Dial(o.Predecessor.Addr)
-	if err != nil {
-		return err
-	}
-	o.DataPre.lock.Lock()
-	o.DataPre.Map = make(map[string]string)
-	err = client.Call("RPCNode.MoveDataPre", 0, &o.DataPre.Map)
-	o.DataPre.lock.Unlock()
-	err = client.Close()
-	if err != nil {
-		return err
-	}
+	//if Ping(o.Predecessor.Addr) == false {
+	//	return errors.New("Error: Not connected[5] ")
+	//}
+	//client, err := Dial(o.Predecessor.Addr)
+	//if err != nil {
+	//	return err
+	//}
+	//o.DataPre.lock.Lock()
+	//o.DataPre.Map = make(map[string]string)
+	//err = client.Call("RPCNode.MoveDataPre", 0, &o.DataPre.Map)
+	//o.DataPre.lock.Unlock()
+	//err = client.Close()
+	//if err != nil {
+	//	return err
+	//}
 	return nil
 }
 
 // method simpleStabilize() stabilize once
 func (o *Node) simpleStabilize() {
-	if o.Successor[1].Addr != o.Addr {
-		o.FixSuccessors()
+	err := o.FixSuccessors()
+	if err != nil {
+		return
 	}
 	oldSuccessor := o.Successor[1]
 
@@ -379,7 +393,10 @@ func (o *Node) simpleStabilize() {
 }
 
 // method FixSuccessors fixes the successor list
-func (o *Node) FixSuccessors() {
+func (o *Node) FixSuccessors() error {
+	if o.Successor[1].Addr == o.Addr {
+		return nil
+	}
 	o.sLock.Lock()
 
 	var p int
@@ -389,50 +406,52 @@ func (o *Node) FixSuccessors() {
 		}
 	}
 	if p == successorListLen+1 {
-		log.Fatalln("Error: No valid successor!!!!")
+		o.sLock.Unlock()
+		return errors.New("Error: No valid successor!!!! ")
 	}
 
 	if p == 1 {
 		o.sLock.Unlock()
-		return
+		return nil
 	}
 
 	o.Successor[1] = o.Successor[p]
+	o.sLock.Unlock()
 	var list [successorListLen + 1]Edge
 	if Ping(o.Successor[1].Addr) == false {
 		fmt.Println("Error: Not connected[4]")
-		return
+		return nil
 	}
 	client, err := Dial(o.Successor[1].Addr)
 	if err != nil {
-		o.sLock.Unlock()
 		fmt.Println("Error: Dialing error[4]: ", err)
-		return
+		return nil
 	}
 
 	err = client.Call("RPCNode.GetSuccessorList", 0, &list)
 	if err != nil {
-		o.sLock.Unlock()
 		_ = client.Close()
 		fmt.Println("Error: Call GetSuccessorList Error", err)
-		return
+		return nil
 	}
 	err = client.Close()
 	if err != nil {
-		o.sLock.Unlock()
 		fmt.Println("Error: Close client error: ", err)
-		return
+		return nil
 	}
 
+	o.sLock.Lock()
 	for i := 2; i <= successorListLen; i++ {
 		o.Successor[i] = list[i-1]
 	}
 	o.sLock.Unlock()
+	return nil
 }
 
 func (o *Node) AgreeJoin(addr string, agree *bool) error {
 	fmt.Println("A user in", addr, "wants to join the chat room. Do you agree?(y/n)")
-	fmt.Println("If you don't response within 20 seconds, we assume that you enter \"n\".")
+	fmt.Println("If you don't response within 20 seconds, we assume that you enter \"n\"." +
+		" (Due to some reasons, you need to enter your response TWICE. Sorry.)")
 	o.PrintLock.Lock()
 	ch := make(chan bool)
 	stopCh := make(chan struct{})
@@ -476,7 +495,7 @@ func (o *Node) AgreeJoin(addr string, agree *bool) error {
 
 func (o *Node) PrintMessage(pair StrPair, res *int) error {
 	if o.Successor[1].Addr != o.Addr {
-		o.FixSuccessors()
+		_ = o.FixSuccessors()
 	}
 	if o.Successor[1].Addr != pair.Addr {
 		go func() {

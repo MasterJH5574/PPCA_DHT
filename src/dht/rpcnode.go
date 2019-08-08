@@ -67,8 +67,12 @@ func (o *RPCNode) MoveDataPre(args int, res *map[string]string) error {
 	return o.O.MoveDataPre(args, res)
 }
 
-func (o *RPCNode) QuitMoveData(Data *KVMap, res *int) error {
+func (o *RPCNode) QuitMoveData(Data KVMap, res *int) error {
 	return o.O.QuitMoveData(Data, res)
+}
+
+func (o *RPCNode) QuitMoveDataPre(DataPre KVMap, res *int) error {
+	return o.O.QuitMoveDataPre(DataPre, res)
 }
 
 func (o *RPCNode) GetPredecessor(args int, res *Edge) error {

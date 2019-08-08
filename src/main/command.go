@@ -77,6 +77,7 @@ func Create(o *client, createdOrJoined *bool) {
 	*createdOrJoined = true
 
 	fmt.Println(message.CurrentTime(), "You create a chat room successfully! Your address is", o.O.O.Addr)
+	o.Put("chatHistory::totalRecordsPieces", "0")
 	//message.PrintTime()
 	//fmt.Printf("create: success at %s\n", (*o).GetAddr())
 }
@@ -98,57 +99,68 @@ func Say(o *client) {
 	o.Say()
 }
 
-func Share(o *client, file string) {
+//func Share(o *client, file string) {
+//
+//}
+//
+//func Download(o *client, file string) {
+//
+//}
+//
+//func Delete(o *client, file string) {
+//
+//}
 
-}
-
-func Download(o *client, file string) {
-
-}
-
-func Delete(o *client, file string) {
-
-}
-
-/*
-func Put(o *dhtNode, key, value string) {
-	message.PrintTime()
-	success := (*o).Put(key, value)
-	if success == false {
-		fmt.Println("Put: cannot put", key, value)
-		return
+func History(o *client) {
+	_, totStr := o.Get("chatHistory::totalRecordsPieces")
+	tot, _ := strconv.Atoi(totStr)
+	fmt.Println("------- HISTORY -------")
+	for i := 0; i < tot; i++ {
+		_, totStr = o.Get("chatHistory::RecordNo" + strconv.Itoa(i))
+		fmt.Println(totStr)
 	}
-
-	//message.PrintTime()
-	//fmt.Println("Put: ", key, value)
+	fmt.Println(tot, "piece(s) in total")
+	fmt.Println("----- HISTORY END -----")
 }
 
+//func Put(o *client, key, value string) {
+//	//message.PrintTime()
+//	success := o.Put(key, value)
+//	if success == false {
+//		fmt.Println("Put: cannot put", key, value)
+//		return
+//	}
+//
+//	//message.PrintTime()
+//	//fmt.Println("Put: ", key, value)
+//}
 
-func Get(o *dhtNode, key string) {
-	message.PrintTime()
-	//value, success := o.O.Get(key)
-	success, _ := (*o).Get(key)
-	if success == false {
-		//fmt.Println("Get: Not Found: ", key)
-		return
-	}
+//
+//func Get(o *dhtNode, key string) {
+//	message.PrintTime()
+//	//value, success := o.O.Get(key)
+//	success, _ := (*o).Get(key)
+//	if success == false {
+//		//fmt.Println("Get: Not Found: ", key)
+//		return
+//	}
+//
+//	//message.PrintTime()
+//	//fmt.Println("Get: the key of ", key, " is ", value)
+//}
+//
+//func Delete(o *dhtNode, key string) {
+//	message.PrintTime()
+//	success := (*o).Del(key)
+//	if success == false {
+//		//fmt.Println("Delete: not found: ", key)
+//		return
+//	}
+//
+//	//message.PrintTime()
+//	//fmt.Println("Delete ", key)
+//}
 
-	//message.PrintTime()
-	//fmt.Println("Get: the key of ", key, " is ", value)
-}
-
-func Delete(o *dhtNode, key string) {
-	message.PrintTime()
-	success := (*o).Del(key)
-	if success == false {
-		//fmt.Println("Delete: not found: ", key)
-		return
-	}
-
-	//message.PrintTime()
-	//fmt.Println("Delete ", key)
-}
-*/
 func Dump(o *client) {
 	o.Dump()
 }
@@ -272,24 +284,30 @@ func commandLine() {
 			} else {
 				Say(&o)
 			}
-		case "share":
-			if len(args) != 3 {
+		case "history":
+			if len(args) != 1 {
 				message.InvalidCommand()
 			} else {
-				Share(&o, args[1])
+				History(&o)
 			}
-		case "download":
-			if len(args) != 2 {
-				message.InvalidCommand()
-			} else {
-				Download(&o, args[1])
-			}
-		case "delete":
-			if len(args) != 2 {
-				message.InvalidCommand()
-			} else {
-				Delete(&o, args[1])
-			}
+		//case "share":
+		//	if len(args) != 3 {
+		//		message.InvalidCommand()
+		//	} else {
+		//		Share(&o, args[1])
+		//	}
+		//case "download":
+		//	if len(args) != 2 {
+		//		message.InvalidCommand()
+		//	} else {
+		//		Download(&o, args[1])
+		//	}
+		//case "delete":
+		//	if len(args) != 2 {
+		//		message.InvalidCommand()
+		//	} else {
+		//		Delete(&o, args[1])
+		//	}
 
 		// dump
 		case "dump":

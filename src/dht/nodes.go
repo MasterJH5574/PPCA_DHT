@@ -73,15 +73,14 @@ func (o *Node) Init(port string) {
 // method FindSuccessor returns an edge pointing to the successor of ID in pos
 // this method may be called by other goroutine
 func (o *Node) FindSuccessor(pos *LookupType, res *Edge) error {
-	if o.Successor[1].Addr == o.Addr {
-		*res = Edge{o.Addr, new(big.Int).Set(o.ID)}
-		return nil
-	}
 	pos.cnt++
 	if pos.cnt >= FailTimes {
 		return errors.New("Lookup failure: not found ")
 	}
-	o.FixSuccessors()
+	err := o.FixSuccessors()
+	if err != nil {
+		return err
+	}
 	if o.Successor[1].Addr == o.Addr || pos.ID.Cmp(o.ID) == 0 {
 		*res = Edge{o.Addr, new(big.Int).Set(o.ID)}
 	} else if between(o.ID, pos.ID, o.Successor[1].ID, true) {
@@ -128,7 +127,7 @@ func (o *Node) closestPrecedingNode(id *big.Int) Edge {
 			}
 		}
 	}
-	o.FixSuccessors()
+	_ = o.FixSuccessors()
 	if o.Ping(o.Successor[1].Addr) {
 		return Edge{o.Successor[1].Addr, new(big.Int).Set(o.Successor[1].ID)}
 	} else {
@@ -243,20 +242,22 @@ func (o *Node) Join(addr string) bool {
 		return false
 	}
 
+	time.Sleep(200 * time.Millisecond)
 	return true
 }
 
 // method Quit() let the current node quit the chord ring
 // note that the current node has predecessor and successor
 func (o *Node) Quit() {
-	//o.FixSuccessors()
-	if o.Successor[1].Addr == o.Addr {
-		//fmt.Println("Quit success")
-		return
-	} else if o.Successor[1].Addr == o.Predecessor.Addr {
+	err := o.FixSuccessors()
+	if err != nil {
 		return
 	}
 
+	if o.Successor[1].Addr == o.Addr {
+		fmt.Println("Quit success")
+		return
+	}
 	o.MoveAllDataToSuccessor()
 
 	// set the predecessor's successor
@@ -315,7 +316,7 @@ func (o *Node) Stabilize(infinite bool) {
 	} else {
 		for o.ON == true {
 			o.simpleStabilize()
-			time.Sleep(Second / 4)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }
@@ -324,30 +325,33 @@ func (o *Node) Stabilize(infinite bool) {
 // note that node o is the predecessor of node p
 // called when o.stabilize()
 func (o *Node) Notify(pred *Edge, res *int) error {
-	if Ping(pred.Addr) == false {
-		return nil
-	}
-
 	oldPre := o.Predecessor
 	if o.Predecessor == nil || between(o.Predecessor.ID, pred.ID, o.ID, false) {
 		o.Predecessor = pred
 	}
 	if oldPre != o.Predecessor && o.Predecessor != nil {
-		if Ping(o.Predecessor.Addr) == false {
-			fmt.Println(oldPre, o.Predecessor)
-			return errors.New("Error: Not connected(9) ")
-		}
-		client, err := Dial(o.Predecessor.Addr)
-		if err != nil {
-			return err
-		}
-		o.DataPre.lock.Lock()
-		o.DataPre.Map = make(map[string]string)
-		err = client.Call("RPCNode.MoveDataPre", 1, &o.DataPre.Map)
-		o.DataPre.lock.Unlock()
-		err = client.Close()
-		if err != nil {
-			return err
+		if o.Predecessor.Addr != o.Addr {
+			if Ping(o.Predecessor.Addr) == false {
+				return errors.New("Error: Not connected(9) ")
+			}
+			client, err := Dial(o.Predecessor.Addr)
+			if err != nil {
+				return err
+			}
+			o.DataPre.lock.Lock()
+			o.DataPre.Map = make(map[string]string)
+			err = client.Call("RPCNode.MoveDataPre", 1, &o.DataPre.Map)
+			o.DataPre.lock.Unlock()
+			err = client.Close()
+			if err != nil {
+				return err
+			}
+		} else {
+			o.DataPre.lock.Lock()
+			o.Data.lock.Lock()
+			o.DataPre.Map = o.Data.Map
+			o.Data.lock.Unlock()
+			o.DataPre.lock.Unlock()
 		}
 	}
 	return nil
@@ -359,7 +363,6 @@ func (o *Node) FixFingers() {
 	o.FingerIndex = 1
 	for o.ON == true {
 		if o.Successor[1].Addr != o.Finger[1].Addr {
-			fmt.Println("hahaha")
 			o.FingerIndex = 1
 		}
 
@@ -374,7 +377,7 @@ func (o *Node) FixFingers() {
 				return
 			}
 			fmt.Println("Fix finger waiting...", i)
-			time.Sleep(Second / 4)
+			time.Sleep(100 * time.Millisecond)
 		}
 
 		edge := o.Finger[o.FingerIndex]
@@ -398,7 +401,7 @@ func (o *Node) FixFingers() {
 			}
 		}
 
-		time.Sleep(Second / 4)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -407,45 +410,57 @@ func (o *Node) FixFingers() {
 func (o *Node) CheckPredecessor() {
 	for o.ON == true {
 		if o.Predecessor == nil {
-			time.Sleep(Second / 4)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		if !o.Ping(o.Predecessor.Addr) {
 			fmt.Println(o.Addr, "predecessor:", o.Predecessor.Addr, "-> nil")
 			o.Predecessor = nil
 
-			o.FixSuccessors()
-			if !Ping(o.Successor[1].Addr) {
-				fmt.Println("Error: Not connected(10)")
-				continue
-			}
-			client, err := Dial(o.Successor[1].Addr)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			o.DataPre.lock.Lock()
-			o.Data.lock.Lock()
-			for k, v := range o.DataPre.Map {
-				o.Data.Map[k] = v
-				err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
-				if err != nil {
-					o.Data.lock.Unlock()
-					o.DataPre.lock.Unlock()
-					_ = client.Close()
-					fmt.Println(err)
+			_ = o.FixSuccessors()
+			if o.Successor[1].Addr != o.Addr {
+				if !Ping(o.Successor[1].Addr) {
+					fmt.Println("Error: Not connected(10)")
+					continue
 				}
+				client, err := Dial(o.Successor[1].Addr)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				o.DataPre.lock.Lock()
+				o.Data.lock.Lock()
+				for k, v := range o.DataPre.Map {
+					o.Data.Map[k] = v
+					err = client.Call("RPCNode.PutValueDataPre", KVPair{k, v}, new(bool))
+					if err != nil {
+						o.Data.lock.Unlock()
+						o.DataPre.lock.Unlock()
+						_ = client.Close()
+						fmt.Println(err)
+					}
+				}
+				o.DataPre.Map = make(map[string]string)
+				o.Data.lock.Unlock()
+				o.DataPre.lock.Unlock()
+			} else {
+				o.DataPre.lock.Lock()
+				o.Data.lock.Lock()
+				for k, v := range o.DataPre.Map {
+					o.Data.Map[k] = v
+				}
+				o.DataPre.Map = make(map[string]string)
+				o.Data.lock.Unlock()
+				o.DataPre.lock.Unlock()
 			}
-			o.DataPre.Map = make(map[string]string)
-			o.Data.lock.Unlock()
-			o.DataPre.lock.Unlock()
 		}
-		time.Sleep(Second / 4)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
 // put a Key into the chord ring
 func (o *Node) Put(key, value string) bool {
+	time.Sleep(15 * time.Millisecond)
 	keyID := hashString(key)
 
 	var res Edge
@@ -484,56 +499,64 @@ func (o *Node) Put(key, value string) bool {
 		return false
 	}
 
-	fmt.Println("Put at", res.Addr, ": Key =", key, "Value =", value)
+	//fmt.Println("Put at", res.Addr, ": Key =", key, "Value =", value)
 	return success
 }
 
 // get a Key
 func (o *Node) Get(key string) (string, bool) {
+	time.Sleep(15 * time.Millisecond)
 	keyID := hashString(key)
 
-	var res Edge
-	err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
-	if err != nil {
-		fmt.Println("Error: Get error: ", err)
-		return *new(string), false
-	}
-
-	if Ping(res.Addr) == false {
-		fmt.Println("Error: Not connected(7)")
-		return *new(string), false
-	}
-	client, err := Dial(res.Addr)
-	if err != nil {
-		fmt.Println("Error: Dialing error(7): ", err)
-		return *new(string), false
-	}
-
-	var value string
-	err = client.Call("RPCNode.GetValue", key, &value)
-	if err != nil {
-		err = client.Close()
+	for i := 0; i < 5; i++ {
+		var res Edge
+		err := o.FindSuccessor(&LookupType{new(big.Int).Set(keyID), 0}, &res)
 		if err != nil {
-			fmt.Println("Error: Close client error: ", err)
-			return *new(string), false
+			fmt.Println("Error: Get error: ", err)
+			time.Sleep(200 * time.Millisecond)
+			continue
 		}
 
-		fmt.Println("Get not found at", res.Addr, ": Key =", key)
-		return *new(string), false
+		if Ping(res.Addr) == false {
+			fmt.Println("Error: Not connected(7)")
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		client, err := Dial(res.Addr)
+		if err != nil {
+			fmt.Println("Error: Dialing error(7): ", err)
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		var value string
+		err = client.Call("RPCNode.GetValue", key, &value)
+		if err != nil {
+			err = client.Close()
+			if err != nil {
+				fmt.Println("Error: Close client error: ", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+
+			//fmt.Println("Get not found at", res.Addr, ": Key =", key)
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		_ = client.Close()
+
+		//fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
+		return value, true
 	}
 
-	err = client.Close()
-	if err != nil {
-		fmt.Println("Error: Close client error: ", err)
-		return *new(string), false
-	}
-
-	fmt.Println("Get at", res.Addr, ": Key =", key, "Value =", value)
-	return value, true
+	//fmt.Println("Get not found: Key =", key)
+	return "", false
 }
 
 // delete a Key
 func (o *Node) Delete(key string) bool {
+	time.Sleep(15 * time.Millisecond)
 	keyID := hashString(key)
 
 	var res Edge
@@ -576,7 +599,7 @@ func (o *Node) Delete(key string) bool {
 		fmt.Println("Delete success at", res.Addr, ": Key =", key)
 		return true
 	}
-	fmt.Println("Delete not found at", res.Addr, ": Key =", key)
+	//fmt.Println("Delete not found at", res.Addr, ": Key =", key)
 	return false
 }
 
@@ -600,6 +623,5 @@ func (o *Node) Dump() {
 	o.DataPre.lock.Lock()
 	fmt.Println("DataPre  :", o.DataPre.Map)
 	o.DataPre.lock.Unlock()
-	fmt.Println("ON:", o.ON)
 	fmt.Println("-------- DUMP END --------")
 }
